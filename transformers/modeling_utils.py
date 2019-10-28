@@ -553,6 +553,50 @@ class PoolerAnswerClass(nn.Module):
         return x
 
 
+class PoolerAnswerClassGeneralized(nn.Module):
+    """ Compute SQuAD 2.0 answer class from classification and start tokens hidden states. """
+    def __init__(self, config, k=1):
+        super(PoolerAnswerClassGeneralized, self).__init__()
+        self.dense_0 = nn.Linear(config.hidden_size * 2, config.hidden_size)
+        self.activation = nn.Tanh()
+        self.dense_1 = nn.Linear(config.hidden_size, k, bias=False)
+
+    def forward(self, hidden_states, start_states=None, start_positions=None, cls_index=None):
+        """
+        Args:
+            One of ``start_states``, ``start_positions`` should be not None.
+            If both are set, ``start_positions`` overrides ``start_states``.
+
+            **start_states**: ``torch.LongTensor`` of shape identical to ``hidden_states``.
+                hidden states of the first tokens for the labeled span.
+            **start_positions**: ``torch.LongTensor`` of shape ``(batch_size,)``
+                position of the first token for the labeled span.
+            **cls_index**: torch.LongTensor of shape ``(batch_size,)``
+                position of the CLS token. If None, take the last token.
+
+            note(Original repo):
+                no dependency on end_feature so that we can obtain one single `cls_logits`
+                for each sample
+        """
+        hsz = hidden_states.shape[-1]
+        assert start_states is not None or start_positions is not None, "One of start_states, start_positions should be not None"
+        if start_positions is not None:
+            start_positions = start_positions[:, None, None].expand(-1, -1, hsz) # shape (bsz, 1, hsz)
+            start_states = hidden_states.gather(-2, start_positions).squeeze(-2) # shape (bsz, hsz)
+
+        if cls_index is not None:
+            cls_index = cls_index[:, None, None].expand(-1, -1, hsz) # shape (bsz, 1, hsz)
+            cls_token_state = hidden_states.gather(-2, cls_index).squeeze(-2) # shape (bsz, hsz)
+        else:
+            cls_token_state = hidden_states[:, -1, :] # shape (bsz, hsz)
+
+        x = self.dense_0(torch.cat([start_states, cls_token_state], dim=-1))
+        x = self.activation(x)
+        x = self.dense_1(x).squeeze(-1)
+
+        return x
+
+
 class SQuADHead(nn.Module):
     r""" A SQuAD head inspired by XLNet.
 

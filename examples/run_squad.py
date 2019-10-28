@@ -40,7 +40,7 @@ from transformers import (WEIGHTS_NAME, BertConfig,
                                   BertForQuestionAnswering, BertTokenizer,
                                   XLMConfig, XLMForQuestionAnswering,
                                   XLMTokenizer, XLNetConfig,
-                                  XLNetForQuestionAnswering,
+                                  XLNetForQuestionAnswering, XLNetForQuestionAnsweringGeneralized,
                                   XLNetTokenizer,
                                   DistilBertConfig, DistilBertForQuestionAnswering, DistilBertTokenizer)
 
@@ -63,6 +63,8 @@ ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) \
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForQuestionAnswering, BertTokenizer),
     'xlnet': (XLNetConfig, XLNetForQuestionAnswering, XLNetTokenizer),
+    # Todo change
+    'xlnetgeneral': (XLNetConfig, XLNetForQuestionAnsweringGeneralized, XLNetTokenizer),
     'xlm': (XLMConfig, XLMForQuestionAnswering, XLMTokenizer),
     'distilbert': (DistilBertConfig, DistilBertForQuestionAnswering, DistilBertTokenizer)
 }
@@ -140,10 +142,12 @@ def train(args, train_dataset, model, tokenizer):
             inputs = {'input_ids':       batch[0],
                       'attention_mask':  batch[1],
                       'start_positions': batch[3],
-                      'end_positions':   batch[4]}
+                      'end_positions':   batch[4],
+                      'is_impossible':   batch[-1]
+                      }
             if args.model_type != 'distilbert':
                 inputs['token_type_ids'] = None if args.model_type == 'xlm' else batch[2]
-            if args.model_type in ['xlnet', 'xlm']:
+            if args.model_type in ['xlnet', 'xlm', 'xlnetgeneral']:
                 inputs.update({'cls_index': batch[5],
                                'p_mask':       batch[6]})
             outputs = model(**inputs)
@@ -300,6 +304,10 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         examples = read_squad_examples(input_file=input_file,
                                                 is_training=not evaluate,
                                                 version_2_with_negative=args.version_2_with_negative)
+
+        # Todo remove
+        examples = examples[:100]
+
         features = convert_examples_to_features(examples=examples,
                                                 tokenizer=tokenizer,
                                                 max_seq_length=args.max_seq_length,
@@ -319,16 +327,21 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
     all_segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
     all_cls_index = torch.tensor([f.cls_index for f in features], dtype=torch.long)
     all_p_mask = torch.tensor([f.p_mask for f in features], dtype=torch.float)
+
+    #Todo add additional cls info and dataset type info
+    all_is_impossible = torch.tensor([f.is_impossible for f in features], dtype=torch.float)
+
+
     if evaluate:
         all_example_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
         dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids,
-                                all_example_index, all_cls_index, all_p_mask)
+                                all_example_index, all_cls_index, all_p_mask, all_is_impossible)
     else:
         all_start_positions = torch.tensor([f.start_position for f in features], dtype=torch.long)
         all_end_positions = torch.tensor([f.end_position for f in features], dtype=torch.long)
         dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids,
                                 all_start_positions, all_end_positions,
-                                all_cls_index, all_p_mask)
+                                all_cls_index, all_p_mask, all_is_impossible)
 
     if output_examples:
         return dataset, examples, features
@@ -362,8 +375,8 @@ def main():
                         help='If true, the SQuAD examples contain some that do not have an answer.')
     parser.add_argument('--null_score_diff_threshold', type=float, default=0.0,
                         help="If null_score - best_non_null is greater than the threshold predict null.")
-
-    parser.add_argument("--max_seq_length", default=384, type=int,
+    # Todo 384
+    parser.add_argument("--max_seq_length", default=50, type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. Sequences "
                              "longer than this will be truncated, and sequences shorter than this will be padded.")
     parser.add_argument("--doc_stride", default=128, type=int,
@@ -379,10 +392,10 @@ def main():
                         help="Rul evaluation during training at each logging step.")
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
-
-    parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
+    # Todo 4
+    parser.add_argument("--per_gpu_train_batch_size", default=2, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=8, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=2, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")
@@ -481,6 +494,9 @@ def main():
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
     model.to(args.device)
+    if args.model_type in ['xlnetgeneral']:
+        for ind in range(len(model.answer_classes)):
+            model.answer_classes[ind] = model.answer_classes[ind].to(args.device)
 
     logger.info("Training/evaluation parameters %s", args)
 
