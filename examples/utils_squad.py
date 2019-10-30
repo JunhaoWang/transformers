@@ -124,6 +124,20 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
     for entry in tqdm(input_data):
         for paragraph in entry["paragraphs"]:
             paragraph_text = paragraph["context"]
+
+            # Todo: hack SQUAD answer span to be sentence based
+            paragraph_sents = paragraph_text.split('. ')
+            word_to_sent_offset = {}
+            c = 0
+            for s in paragraph_sents:
+                s_start = c
+                s_end = c + len(s)
+                for _ in s:
+                    word_to_sent_offset[c] = (s_start, s_end)
+                    c += 1
+                c += 2
+
+
             doc_tokens = []
             char_to_word_offset = []
             prev_is_whitespace = True
@@ -156,8 +170,21 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
                         orig_answer_text = answer["text"]
                         answer_offset = answer["answer_start"]
                         answer_length = len(orig_answer_text)
-                        start_position = char_to_word_offset[answer_offset]
-                        end_position = char_to_word_offset[answer_offset + answer_length - 1]
+
+                        # Todo: hack SQUAD
+                        start_position, end_position = word_to_sent_offset[answer_offset]
+                        start_position_, end_position_ = word_to_sent_offset[answer_offset + answer_length - 1]
+                        start_position_ = min(start_position, start_position_)
+                        end_position_ = max(end_position, end_position_)
+                        orig_answer_text = paragraph_text[start_position:(end_position + 1)]
+                        start_position = char_to_word_offset[start_position_]
+                        end_position = char_to_word_offset[end_position_]
+
+
+                        # start_position = char_to_word_offset[answer_offset]
+                        # end_position = char_to_word_offset[answer_offset + answer_length - 1]
+
+
                         # Only add answers where the text can be exactly recovered from the
                         # document. If this CAN'T happen it's likely due to weird Unicode
                         # stuff so we will just skip the example.
