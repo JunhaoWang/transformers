@@ -1444,9 +1444,9 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
     def forward(self, input_ids, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
                 token_type_ids=None, input_mask=None, head_mask=None,
                 start_positions=None, end_positions=None, is_impossible=None, cls_index=None, p_mask=None,
-                head_idx=0, include_span_loss=True
+                head_idx=0, no_span_loss=None
                 ):
-        include_span_loss = False
+        # no_span_loss = True
 
         transformer_outputs = self.transformer(input_ids,
                                                attention_mask=attention_mask,
@@ -1474,19 +1474,24 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
             start_loss = loss_fct(start_logits, start_positions)
             end_loss = loss_fct(end_logits, end_positions)
 
-            if include_span_loss:
-                total_loss = (start_loss + end_loss) / 2
-            else:
-                total_loss = 0
+            total_loss = (start_loss + end_loss) / 2
+
+            # if not no_span_loss:
+            #     total_loss = (start_loss + end_loss) / 2
+            # else:
+            #     total_loss = 0
 
             if cls_index is not None and is_impossible is not None:
                 # Predict answerability from the representation of CLS and START
-                if include_span_loss:
-                    cls_logits = self.answer_classes[head_idx](hidden_states, start_positions=start_positions, cls_index=cls_index)
-                else:
-                    start_log_probs = F.softmax(start_logits, dim=-1)  # shape (bsz, slen)
-                    start_states = torch.einsum("blh,bl->bh", hidden_states, start_log_probs)
-                    cls_logits = self.answer_classes[head_idx](hidden_states, start_states=start_states, cls_index=cls_index)  #
+                cls_logits = self.answer_classes[head_idx](hidden_states, start_positions=start_positions,
+                                                           cls_index=cls_index)
+                
+                # if not no_span_loss:
+                #     cls_logits = self.answer_classes[head_idx](hidden_states, start_positions=start_positions, cls_index=cls_index)
+                # else:
+                #     start_log_probs = F.softmax(start_logits, dim=-1)  # shape (bsz, slen)
+                #     start_states = torch.einsum("blh,bl->bh", hidden_states, start_log_probs)
+                #     cls_logits = self.answer_classes[head_idx](hidden_states, start_states=start_states, cls_index=cls_index)  #
 
                 loss_fct_cls = nn.BCEWithLogitsLoss()
                 cls_loss = loss_fct_cls(cls_logits, is_impossible)

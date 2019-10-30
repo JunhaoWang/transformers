@@ -59,7 +59,9 @@ class SquadExample(object):
                  orig_answer_text=None,
                  start_position=None,
                  end_position=None,
-                 is_impossible=None):
+                 is_impossible=None,
+                 no_span_loss=False
+                ):
         self.qas_id = qas_id
         self.question_text = question_text
         self.doc_tokens = doc_tokens
@@ -67,6 +69,7 @@ class SquadExample(object):
         self.start_position = start_position
         self.end_position = end_position
         self.is_impossible = is_impossible
+        self.no_span_loss = no_span_loss
 
     def __str__(self):
         return self.__repr__()
@@ -104,7 +107,8 @@ class InputFeatures(object):
                  paragraph_len,
                  start_position=None,
                  end_position=None,
-                 is_impossible=None):
+                 is_impossible=None,
+                 no_span_loss=False):
         self.unique_id = unique_id
         self.example_index = example_index
         self.doc_span_index = doc_span_index
@@ -120,6 +124,7 @@ class InputFeatures(object):
         self.start_position = start_position
         self.end_position = end_position
         self.is_impossible = is_impossible
+        self.no_span_loss = no_span_loss
 
 
 def read_squad_examples(input_file, is_training, version_2_with_negative):
@@ -131,6 +136,9 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
         if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
             return True
         return False
+
+    # Todo: undo
+    input_data = input_data[:2]
 
     examples = []
     for entry in tqdm(input_data):
@@ -229,7 +237,9 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
                     orig_answer_text=orig_answer_text,
                     start_position=start_position,
                     end_position=end_position,
-                    is_impossible=is_impossible)
+                    is_impossible=1 if is_impossible else 2,
+                    no_span_loss=False
+                )
                 examples.append(example)
     return examples
 
@@ -274,10 +284,10 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
 
         tok_start_position = None
         tok_end_position = None
-        if is_training and example.is_impossible:
+        if is_training and (example.is_impossible == 1):
             tok_start_position = -1
             tok_end_position = -1
-        if is_training and not example.is_impossible:
+        if is_training and not (example.is_impossible == 1):
             tok_start_position = orig_to_tok_index[example.start_position]
             if example.end_position < len(example.doc_tokens) - 1:
                 tok_end_position = orig_to_tok_index[example.end_position + 1] - 1
@@ -376,7 +386,7 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
             assert len(input_mask) == max_seq_length
             assert len(segment_ids) == max_seq_length
 
-            span_is_impossible = example.is_impossible
+            span_is_impossible = example.is_impossible == 1
             start_position = None
             end_position = None
             if is_training and not span_is_impossible:
@@ -425,25 +435,49 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                     logger.info("end_position: %d" % (end_position))
                     logger.info(
                         "answer: %s" % (answer_text))
-
-            features.append(
-                InputFeatures(
-                    unique_id=unique_id,
-                    example_index=example_index,
-                    doc_span_index=doc_span_index,
-                    tokens=tokens,
-                    token_to_orig_map=token_to_orig_map,
-                    token_is_max_context=token_is_max_context,
-                    input_ids=input_ids,
-                    input_mask=input_mask,
-                    segment_ids=segment_ids,
-                    cls_index=cls_index,
-                    p_mask=p_mask,
-                    paragraph_len=paragraph_len,
-                    start_position=start_position,
-                    end_position=end_position,
-                    is_impossible=span_is_impossible))
-            unique_id += 1
+            no_span_loss = example.no_span_loss
+            if span_is_impossible:
+                features.append(
+                    InputFeatures(
+                        unique_id=unique_id,
+                        example_index=example_index,
+                        doc_span_index=doc_span_index,
+                        tokens=tokens,
+                        token_to_orig_map=token_to_orig_map,
+                        token_is_max_context=token_is_max_context,
+                        input_ids=input_ids,
+                        input_mask=input_mask,
+                        segment_ids=segment_ids,
+                        cls_index=cls_index,
+                        p_mask=p_mask,
+                        paragraph_len=paragraph_len,
+                        start_position=start_position,
+                        end_position=end_position,
+                        is_impossible=1,
+                        no_span_loss=no_span_loss
+                    ))
+                unique_id += 1
+            else:
+                features.append(
+                    InputFeatures(
+                        unique_id=unique_id,
+                        example_index=example_index,
+                        doc_span_index=doc_span_index,
+                        tokens=tokens,
+                        token_to_orig_map=token_to_orig_map,
+                        token_is_max_context=token_is_max_context,
+                        input_ids=input_ids,
+                        input_mask=input_mask,
+                        segment_ids=segment_ids,
+                        cls_index=cls_index,
+                        p_mask=p_mask,
+                        paragraph_len=paragraph_len,
+                        start_position=start_position,
+                        end_position=end_position,
+                        is_impossible=example.is_impossible,
+                        no_span_loss=no_span_loss
+                    ))
+                unique_id += 1
 
     return features
 

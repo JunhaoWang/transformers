@@ -143,7 +143,8 @@ def train(args, train_dataset, model, tokenizer):
                       'attention_mask':  batch[1],
                       'start_positions': batch[3],
                       'end_positions':   batch[4],
-                      'is_impossible':   batch[-1]
+                      'is_impossible':   batch[-2],
+                      'no_span_loss':    batch[-1]
                       }
             if args.model_type != 'distilbert':
                 inputs['token_type_ids'] = None if args.model_type == 'xlm' else batch[2]
@@ -237,7 +238,10 @@ def evaluate(args, model, tokenizer, prefix=""):
             example_indices = batch[3]
             if args.model_type in ['xlnet', 'xlm']:
                 inputs.update({'cls_index': batch[4],
-                               'p_mask':    batch[5]})
+                               'p_mask':    batch[5],
+                               'is_impossible': batch[-2],
+                               'no_span_loss':    batch[-1]
+                               })
             outputs = model(**inputs)
 
         for i, example_index in enumerate(example_indices):
@@ -329,19 +333,21 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
     all_p_mask = torch.tensor([f.p_mask for f in features], dtype=torch.float)
 
     #Todo add additional cls info and dataset type info
-    all_is_impossible = torch.tensor([f.is_impossible for f in features], dtype=torch.float)
+    all_is_impossible = torch.tensor([f.is_impossible for f in features], dtype=torch.long)
+    all_no_span_loss = torch.tensor([f.no_span_loss for f in features], dtype=torch.long)
 
 
+    # Todo somehow they put the most important data loading step in here, WTF
     if evaluate:
         all_example_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
         dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids,
-                                all_example_index, all_cls_index, all_p_mask, all_is_impossible)
+                                all_example_index, all_cls_index, all_p_mask, all_is_impossible, all_no_span_loss)
     else:
         all_start_positions = torch.tensor([f.start_position for f in features], dtype=torch.long)
         all_end_positions = torch.tensor([f.end_position for f in features], dtype=torch.long)
         dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids,
                                 all_start_positions, all_end_positions,
-                                all_cls_index, all_p_mask, all_is_impossible)
+                                all_cls_index, all_p_mask, all_is_impossible, all_no_span_loss)
 
     if output_examples:
         return dataset, examples, features
