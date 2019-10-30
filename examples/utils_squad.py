@@ -25,6 +25,18 @@ import collections
 from io import open
 
 from tqdm import tqdm
+import spacy
+import numpy as np
+
+def custom_pipeline(nlp):
+    return (nlp.tagger, )
+    # for token in nlp[:-1]:
+    #     if token.text == '.':
+    #         nlp[token.i+1].is_sent_start = True
+    # return nlp
+
+
+nlp = spacy.load("en_core_web_sm", create_pipeline=custom_pipeline)
 
 from transformers.tokenization_bert import BasicTokenizer, whitespace_tokenize
 
@@ -126,16 +138,17 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
             paragraph_text = paragraph["context"]
 
             # Todo: hack SQUAD answer span to be sentence based
-            paragraph_sents = paragraph_text.split('. ')
-            word_to_sent_offset = {}
-            c = 0
-            for s in paragraph_sents:
-                s_start = c
-                s_end = c + len(s)
-                for _ in s:
-                    word_to_sent_offset[c] = (s_start, s_end)
-                    c += 1
-                c += 2
+            spacy_paragraph_text = nlp(paragraph_text)
+            paragraph_sents = list(spacy_paragraph_text.sents)
+            char_to_sent_bound_idx = {}
+            for ind, i in enumerate(paragraph_sents):
+                if ind < len(paragraph_sents) - 1:
+                    i_next = paragraph_sents[ind + 1]
+                    s_start, s_end = i[0].idx, i_next[0].idx - 1
+                else:
+                    s_start, s_end = i[0].idx, len(paragraph_text) - 1
+                for j in range(s_start, s_end + 1):
+                    char_to_sent_bound_idx[j] = (s_start, s_end)
 
 
             doc_tokens = []
@@ -172,14 +185,13 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
                         answer_length = len(orig_answer_text)
 
                         # Todo: hack SQUAD
-                        start_position, end_position = word_to_sent_offset[answer_offset]
-                        start_position_, end_position_ = word_to_sent_offset[answer_offset + answer_length - 1]
-                        start_position_ = min(start_position, start_position_)
-                        end_position_ = max(end_position, end_position_)
-                        orig_answer_text = paragraph_text[start_position:(end_position + 1)]
-                        start_position = char_to_word_offset[start_position_]
-                        end_position = char_to_word_offset[end_position_]
 
+                        answer_offset_left, answer_offset_right = char_to_sent_bound_idx[answer_offset]
+                        answer_offset_left_, answer_offset_right_ = char_to_sent_bound_idx[answer_offset + answer_length - 1]
+                        answer_offset_left = min(answer_offset_left, answer_offset_left_)
+                        answer_offset_right = max(answer_offset_right, answer_offset_right_)
+                        start_position = max(0, char_to_word_offset[answer_offset_left])
+                        end_position = char_to_word_offset[answer_offset_right]
 
                         # start_position = char_to_word_offset[answer_offset]
                         # end_position = char_to_word_offset[answer_offset + answer_length - 1]
@@ -197,7 +209,14 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
                         if actual_text.find(cleaned_answer_text) == -1:
                             logger.warning("Could not find answer: '%s' vs. '%s'",
                                            actual_text, cleaned_answer_text)
+                            print(answer_offset, answer_offset + answer_length - 1, answer_offset_left, answer_offset_right)
                             continue
+
+                        # if np.random.random() < .01:
+                        #     print('\n',cleaned_answer_text,'\n--------------------\n', actual_text,'\n')
+
+                        orig_answer_text = actual_text
+
                     else:
                         start_position = -1
                         end_position = -1
