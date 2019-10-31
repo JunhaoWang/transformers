@@ -520,9 +520,6 @@ def main():
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
     model.to(args.device)
-    if args.model_type in ['xlnetgeneral']:
-        for ind in range(len(model.answer_classes)):
-            model.answer_classes[ind] = model.answer_classes[ind].to(args.device)
 
     logger.info("Training/evaluation parameters %s", args)
 

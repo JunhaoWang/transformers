@@ -1438,7 +1438,9 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
         self.start_logits = PoolerStartLogits(config)
         self.end_logits = PoolerEndLogits(config)
         self.cls_head_sizes = cls_head_sizes
-        self.answer_classes = [PoolerAnswerClassGeneralized(config, k) for k in cls_head_sizes]
+        self.answer_classes = torch.nn.ModuleList(
+            [PoolerAnswerClassGeneralized(config, k) for k in cls_head_sizes]
+        )
 
         self.init_weights()
 
