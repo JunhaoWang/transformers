@@ -139,18 +139,26 @@ def train(args, train_dataset, model, tokenizer):
         for step, batch in enumerate(epoch_iterator):
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
+            # Todo WTF
             inputs = {'input_ids':       batch[0],
                       'attention_mask':  batch[1],
                       'start_positions': batch[3],
                       'end_positions':   batch[4],
-                      'is_impossible':   batch[-2],
-                      'no_span_loss':    batch[-1]
                       }
             if args.model_type != 'distilbert':
                 inputs['token_type_ids'] = None if args.model_type == 'xlm' else batch[2]
             if args.model_type in ['xlnet', 'xlm', 'xlnetgeneral']:
                 inputs.update({'cls_index': batch[5],
-                               'p_mask':       batch[6]})
+                               'p_mask':       batch[6],
+                               'is_impossible': batch[-2],
+                               })
+            if args.model_type in ['xlnetgeneral']:
+                inputs.update({'cls_index': batch[5],
+                               'p_mask':       batch[6],
+                               'span_loss': batch[-1],
+                               'head_idx': batch[-3],
+                               'is_impossible': batch[-2],
+                               })
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in transformers (see doc)
 
@@ -236,11 +244,17 @@ def evaluate(args, model, tokenizer, prefix=""):
             if args.model_type != 'distilbert':
                 inputs['token_type_ids'] = None if args.model_type == 'xlm' else batch[2]  # XLM don't use segment_ids
             example_indices = batch[3]
-            if args.model_type in ['xlnet', 'xlm']:
+            if args.model_type in ['xlnet', 'xlm', 'xlnetgeneral']:
                 inputs.update({'cls_index': batch[4],
                                'p_mask':    batch[5],
                                'is_impossible': batch[-2],
-                               'no_span_loss':    batch[-1]
+                               })
+            if args.model_type in ['xlnetgeneral']:
+                inputs.update({'cls_index': batch[4],
+                               'p_mask':    batch[5],
+                               'is_impossible': batch[-2],
+                               'span_loss':    batch[-1],
+                               'head_idx': batch[-3],
                                })
             outputs = model(**inputs)
 
@@ -276,6 +290,8 @@ def evaluate(args, model, tokenizer, prefix=""):
                         output_nbest_file, output_null_log_odds_file, args.predict_file,
                         model.config.start_n_top, model.config.end_n_top,
                         args.version_2_with_negative, tokenizer, args.verbose_logging)
+    # Todo: add xlnetgeneral
+
     else:
         write_predictions(examples, features, all_results, args.n_best_size,
                         args.max_answer_length, args.do_lower_case, output_prediction_file,
@@ -310,7 +326,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                                                 version_2_with_negative=args.version_2_with_negative)
 
         # Todo remove
-        examples = examples[:1]
+        examples = examples[:5]
 
         features = convert_examples_to_features(examples=examples,
                                                 tokenizer=tokenizer,
@@ -332,22 +348,24 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
     all_cls_index = torch.tensor([f.cls_index for f in features], dtype=torch.long)
     all_p_mask = torch.tensor([f.p_mask for f in features], dtype=torch.float)
 
+
     #Todo add additional cls info and dataset type info
     all_is_impossible = torch.tensor([f.is_impossible for f in features], dtype=torch.long)
-    all_no_span_loss = torch.tensor([f.no_span_loss for f in features], dtype=torch.long)
+    all_span_loss = torch.tensor([f.span_loss for f in features], dtype=torch.long)
+    all_head_idx = torch.tensor([f.head_idx for f in features], dtype=torch.long)
 
 
     # Todo somehow they put the most important data loading step in here, WTF
     if evaluate:
         all_example_index = torch.arange(all_input_ids.size(0), dtype=torch.long)
         dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids,
-                                all_example_index, all_cls_index, all_p_mask, all_is_impossible, all_no_span_loss)
+                                all_example_index, all_cls_index, all_p_mask, all_head_idx, all_is_impossible, all_span_loss)
     else:
         all_start_positions = torch.tensor([f.start_position for f in features], dtype=torch.long)
         all_end_positions = torch.tensor([f.end_position for f in features], dtype=torch.long)
         dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids,
                                 all_start_positions, all_end_positions,
-                                all_cls_index, all_p_mask, all_is_impossible, all_no_span_loss)
+                                all_cls_index, all_p_mask, all_head_idx, all_is_impossible, all_span_loss)
 
     if output_examples:
         return dataset, examples, features
@@ -382,7 +400,7 @@ def main():
     parser.add_argument('--null_score_diff_threshold', type=float, default=0.0,
                         help="If null_score - best_non_null is greater than the threshold predict null.")
     # Todo 384
-    parser.add_argument("--max_seq_length", default=20, type=int,
+    parser.add_argument("--max_seq_length", default=384, type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. Sequences "
                              "longer than this will be truncated, and sequences shorter than this will be padded.")
     parser.add_argument("--doc_stride", default=128, type=int,
@@ -399,9 +417,9 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
     # Todo 4
-    parser.add_argument("--per_gpu_train_batch_size", default=2, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=4, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=2, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=4, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")

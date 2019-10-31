@@ -45,6 +45,11 @@ from utils_squad_evaluate import find_all_best_thresh_v2, make_qid_to_has_ans, g
 
 logger = logging.getLogger(__name__)
 
+DATASET2HEAD = {
+    'squad': 0,
+    'fever': 0,
+    'leaders': 1
+}
 
 class SquadExample(object):
     """
@@ -60,7 +65,8 @@ class SquadExample(object):
                  start_position=None,
                  end_position=None,
                  is_impossible=None,
-                 no_span_loss=False
+                 span_loss=True,
+                 dataset_type='squad'
                 ):
         self.qas_id = qas_id
         self.question_text = question_text
@@ -69,7 +75,8 @@ class SquadExample(object):
         self.start_position = start_position
         self.end_position = end_position
         self.is_impossible = is_impossible
-        self.no_span_loss = no_span_loss
+        self.span_loss = span_loss
+        self.dataset_type = dataset_type
 
     def __str__(self):
         return self.__repr__()
@@ -108,7 +115,9 @@ class InputFeatures(object):
                  start_position=None,
                  end_position=None,
                  is_impossible=None,
-                 no_span_loss=False):
+                 span_loss=True,
+                 head_idx=None
+                 ):
         self.unique_id = unique_id
         self.example_index = example_index
         self.doc_span_index = doc_span_index
@@ -124,7 +133,8 @@ class InputFeatures(object):
         self.start_position = start_position
         self.end_position = end_position
         self.is_impossible = is_impossible
-        self.no_span_loss = no_span_loss
+        self.span_loss = span_loss
+        self.head_idx = head_idx
 
 
 def read_squad_examples(input_file, is_training, version_2_with_negative):
@@ -138,7 +148,7 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
         return False
 
     # Todo: undo
-    input_data = input_data[:2]
+    input_data = input_data[:5]
 
     examples = []
     for entry in tqdm(input_data):
@@ -237,8 +247,9 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
                     orig_answer_text=orig_answer_text,
                     start_position=start_position,
                     end_position=end_position,
-                    is_impossible=1 if is_impossible else 2,
-                    no_span_loss=False
+                    is_impossible=1 if is_impossible else 0, # 0 means support
+                    span_loss=True,
+                    dataset_type='squad'
                 )
                 examples.append(example)
     return examples
@@ -435,7 +446,8 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                     logger.info("end_position: %d" % (end_position))
                     logger.info(
                         "answer: %s" % (answer_text))
-            no_span_loss = example.no_span_loss
+            span_loss = example.span_loss
+            dataset_type = example.dataset_type
             if span_is_impossible:
                 features.append(
                     InputFeatures(
@@ -454,7 +466,8 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                         start_position=start_position,
                         end_position=end_position,
                         is_impossible=1,
-                        no_span_loss=no_span_loss
+                        span_loss=span_loss,
+                        head_idx=DATASET2HEAD[dataset_type]
                     ))
                 unique_id += 1
             else:
@@ -475,7 +488,8 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                         start_position=start_position,
                         end_position=end_position,
                         is_impossible=example.is_impossible,
-                        no_span_loss=no_span_loss
+                        span_loss=span_loss,
+                        head_idx=DATASET2HEAD[dataset_type]
                     ))
                 unique_id += 1
 

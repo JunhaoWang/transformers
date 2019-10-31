@@ -1330,7 +1330,7 @@ class XLNetForQuestionAnswering(XLNetPreTrainedModel):
                 # Predict answerability from the representation of CLS and START
                 cls_logits = self.answer_class(hidden_states, start_positions=start_positions, cls_index=cls_index)
                 loss_fct_cls = nn.BCEWithLogitsLoss()
-                cls_loss = loss_fct_cls(cls_logits, is_impossible)
+                cls_loss = loss_fct_cls(cls_logits, is_impossible.float())
 
                 # note(zhiliny): by default multiply the loss by 0.5 so that the scale is comparable to start_loss and end_loss
                 total_loss += cls_loss * 0.5
@@ -1429,7 +1429,7 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
         loss, start_scores, end_scores = outputs[:2]
 
     """
-    def __init__(self, config, cls_head_sizes = [1]):
+    def __init__(self, config, cls_head_sizes = [3, 3]):
         super(XLNetForQuestionAnsweringGeneralized, self).__init__(config)
         self.start_n_top = config.start_n_top
         self.end_n_top = config.end_n_top
@@ -1437,6 +1437,7 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
         self.transformer = XLNetModel(config)
         self.start_logits = PoolerStartLogits(config)
         self.end_logits = PoolerEndLogits(config)
+        self.cls_head_sizes = cls_head_sizes
         self.answer_classes = [PoolerAnswerClassGeneralized(config, k) for k in cls_head_sizes]
 
         self.init_weights()
@@ -1444,9 +1445,12 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
     def forward(self, input_ids, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
                 token_type_ids=None, input_mask=None, head_mask=None,
                 start_positions=None, end_positions=None, is_impossible=None, cls_index=None, p_mask=None,
-                head_idx=0, no_span_loss=None
+                head_idx=None, span_loss=None
                 ):
-        # no_span_loss = True
+
+        for x in (start_positions, end_positions, cls_index, is_impossible):
+            if x is not None and x.dim() > 1:
+                x.squeeze_(-1)
 
         transformer_outputs = self.transformer(input_ids,
                                                attention_mask=attention_mask,
@@ -1459,45 +1463,78 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
         hidden_states = transformer_outputs[0]
         start_logits = self.start_logits(hidden_states, p_mask=p_mask)
 
+        start_log_probs = F.softmax(start_logits, dim=-1)  # shape (bsz, slen)
+
+        start_states = torch.einsum("blh,bl->bh", hidden_states, start_log_probs)
+
         outputs = transformer_outputs[1:]  # Keep mems, hidden states, attentions if there are in it
 
+        loss_fct = CrossEntropyLoss(reduction='none')
+
+        span_loss_idx = span_loss.nonzero().T
+
+        total_loss = 0
+
         if start_positions is not None and end_positions is not None:
-            # If we are on multi-GPU, let's remove the dimension added by batch splitting
-            for x in (start_positions, end_positions, cls_index, is_impossible):
-                if x is not None and x.dim() > 1:
-                    x.squeeze_(-1)
 
-            # during training, compute the end logits based on the ground truth of the start position
-            end_logits = self.end_logits(hidden_states, start_positions=start_positions, p_mask=p_mask)
+            if len(span_loss_idx.squeeze(0)) > 0:
+                hidden_states_span_loss = hidden_states[span_loss_idx].squeeze(0)
+                start_positions_span_loss = start_positions[span_loss_idx].squeeze(0)
+                p_mask_span_loss = p_mask[span_loss_idx].squeeze(0)
+                start_logits_span_loss = start_logits[span_loss_idx].squeeze(0)
+                end_positions_span_loss = end_positions[span_loss_idx].squeeze(0)
 
-            loss_fct = CrossEntropyLoss()
-            start_loss = loss_fct(start_logits, start_positions)
-            end_loss = loss_fct(end_logits, end_positions)
+                end_logits_span_loss = self.end_logits(
+                    hidden_states_span_loss,
+                    start_positions=start_positions_span_loss,
+                    p_mask=p_mask_span_loss
+                )
 
-            total_loss = (start_loss + end_loss) / 2
+                start_loss = loss_fct(start_logits_span_loss, start_positions_span_loss)
+                end_loss = loss_fct(end_logits_span_loss, end_positions_span_loss)
 
-            # if not no_span_loss:
-            #     total_loss = (start_loss + end_loss) / 2
-            # else:
-            #     total_loss = 0
+                total_loss += torch.mean((start_loss + end_loss)) / 2
+
+
 
             if cls_index is not None and is_impossible is not None:
                 # Predict answerability from the representation of CLS and START
-                cls_logits = self.answer_classes[head_idx](hidden_states, start_positions=start_positions,
-                                                           cls_index=cls_index)
-                
-                # if not no_span_loss:
-                #     cls_logits = self.answer_classes[head_idx](hidden_states, start_positions=start_positions, cls_index=cls_index)
-                # else:
-                #     start_log_probs = F.softmax(start_logits, dim=-1)  # shape (bsz, slen)
-                #     start_states = torch.einsum("blh,bl->bh", hidden_states, start_log_probs)
-                #     cls_logits = self.answer_classes[head_idx](hidden_states, start_states=start_states, cls_index=cls_index)  #
 
-                loss_fct_cls = nn.BCEWithLogitsLoss()
-                cls_loss = loss_fct_cls(cls_logits, is_impossible)
+                for i in range(len(self.cls_head_sizes)):
+                    head_loss_idx = (head_idx == i).nonzero().T
+                    if len(head_loss_idx.squeeze(0)) > 0:
 
-                # note(zhiliny): by default multiply the loss by 0.5 so that the scale is comparable to start_loss and end_loss
-                total_loss += cls_loss * 0.5
+                        span_loss_head_loss_mean = span_loss[head_loss_idx].squeeze(0).float().mean()
+
+                        hidden_states_head_loss = hidden_states[head_loss_idx].squeeze(0)
+
+                        if span_loss_head_loss_mean == 1:
+                            # included span loss, use position
+                            start_positions_head_loss = start_positions[head_loss_idx].squeeze(0)
+                            is_impossible_head_loss = is_impossible[head_loss_idx].squeeze(0)
+                            cls_index_head_loss = cls_index[head_loss_idx].squeeze(0)
+
+                            cls_logits = self.answer_classes[i](hidden_states_head_loss, start_positions=start_positions_head_loss,
+                                                                cls_index=cls_index_head_loss)
+                            cls_loss = loss_fct(cls_logits, is_impossible_head_loss)
+
+                            total_loss += torch.mean(cls_loss) / 2
+
+                        elif span_loss_head_loss_mean == 0:
+                            # included span loss, use position
+                            start_states_head_loss = start_states[head_loss_idx].squeeze(0)
+                            is_impossible_head_loss = is_impossible[head_loss_idx].squeeze(0)
+                            cls_index_head_loss = cls_index[head_loss_idx].squeeze(0)
+
+                            cls_logits = self.answer_classes[i](hidden_states_head_loss,
+                                                                start_states=start_states_head_loss,
+                                                                cls_index=cls_index_head_loss)
+                            cls_loss = loss_fct(cls_logits, is_impossible_head_loss)
+
+                            total_loss += torch.mean(cls_loss) / 2
+                        else:
+                            raise Exception('wrong span loss index')
+
 
             outputs = (total_loss,) + outputs
 
@@ -1508,22 +1545,38 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
 
             start_top_log_probs, start_top_index = torch.topk(start_log_probs, self.start_n_top, dim=-1) # shape (bsz, start_n_top)
             start_top_index_exp = start_top_index.unsqueeze(-1).expand(-1, -1, hsz) # shape (bsz, start_n_top, hsz)
-            start_states = torch.gather(hidden_states, -2, start_top_index_exp) # shape (bsz, start_n_top, hsz)
-            start_states = start_states.unsqueeze(1).expand(-1, slen, -1, -1) # shape (bsz, slen, start_n_top, hsz)
+            start_states_ = torch.gather(hidden_states, -2, start_top_index_exp) # shape (bsz, start_n_top, hsz)
+            start_states_ = start_states_.unsqueeze(1).expand(-1, slen, -1, -1) # shape (bsz, slen, start_n_top, hsz)
 
-            hidden_states_expanded = hidden_states.unsqueeze(2).expand_as(start_states) # shape (bsz, slen, start_n_top, hsz)
+            hidden_states_expanded = hidden_states.unsqueeze(2).expand_as(start_states_) # shape (bsz, slen, start_n_top, hsz)
             p_mask = p_mask.unsqueeze(-1) if p_mask is not None else None
-            end_logits = self.end_logits(hidden_states_expanded, start_states=start_states, p_mask=p_mask)
+            end_logits = self.end_logits(hidden_states_expanded, start_states=start_states_, p_mask=p_mask)
             end_log_probs = F.softmax(end_logits, dim=1) # shape (bsz, slen, start_n_top)
 
             end_top_log_probs, end_top_index = torch.topk(end_log_probs, self.end_n_top, dim=1) # shape (bsz, end_n_top, start_n_top)
             end_top_log_probs = end_top_log_probs.view(-1, self.start_n_top * self.end_n_top)
             end_top_index = end_top_index.view(-1, self.start_n_top * self.end_n_top)
 
-            start_states = torch.einsum("blh,bl->bh", hidden_states, start_log_probs)  # get the representation of START as weighted sum of hidden states
-            cls_logits = self.answer_classes[head_idx](hidden_states, start_states=start_states, cls_index=cls_index)  # Shape (batch size,): one single `cls_logits` for each sample
+            cls_logits_all = torch.zeros_like(head_idx).float()
 
-            outputs = (start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits) + outputs
+            for i in range(len(self.cls_head_sizes)):
+                head_loss_idx = (head_idx == i).nonzero().T
+                if len(head_loss_idx.squeeze(0)) > 0:
+
+                    hidden_states_head_loss = hidden_states[head_loss_idx].squeeze(0)
+
+                    start_states_head_loss = start_states[head_loss_idx].squeeze(0)
+
+                    cls_index_head_loss = cls_index[head_loss_idx].squeeze(0)
+
+                    cls_logits = self.answer_classes[i](hidden_states_head_loss,
+                                                        start_states=start_states_head_loss,
+                                                        cls_index=cls_index_head_loss)
+
+                    cls_logits_all[head_loss_idx.squeeze(0)] = cls_logits[:,1]
+
+
+            outputs = (start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits_all) + outputs
 
         # return start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits
         # or (if labels are provided) (total_loss,)
