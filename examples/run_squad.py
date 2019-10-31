@@ -325,8 +325,8 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                                                 is_training=not evaluate,
                                                 version_2_with_negative=args.version_2_with_negative)
 
-        # Todo remove
-        examples = examples[:5]
+        # # Todo remove
+        # examples = examples[:5]
 
         features = convert_examples_to_features(examples=examples,
                                                 tokenizer=tokenizer,
@@ -432,7 +432,7 @@ def main():
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
     # Todo 3.0
-    parser.add_argument("--num_train_epochs", default=1.0, type=float,
+    parser.add_argument("--num_train_epochs", default=3.0, type=float,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
@@ -494,7 +494,7 @@ def main():
         torch.distributed.init_process_group(backend='nccl')
         args.n_gpu = 1
     # Todo: change
-    args.device = 'cpu' # device
+    args.device = device
 
     # Setup logging
     logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',

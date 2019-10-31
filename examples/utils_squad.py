@@ -147,8 +147,8 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
             return True
         return False
 
-    # Todo: undo
-    input_data = input_data[:5]
+    # # Todo: remove
+    # input_data = input_data[:5]
 
     examples = []
     for entry in tqdm(input_data):
