@@ -27,6 +27,11 @@ from io import open
 from tqdm import tqdm
 import spacy
 import numpy as np
+import pandas as pd
+
+from copy import deepcopy
+from sklearn.model_selection import train_test_split
+import pickle
 
 def custom_pipeline(nlp):
     return (nlp.tagger, )
@@ -47,8 +52,30 @@ logger = logging.getLogger(__name__)
 
 DATASET2HEAD = {
     'squad': 0,
-    'fever': 0,
-    'leaders': 1
+    'fever': 1,
+    'fnc': 2,
+    'leaders': 3
+}
+
+DATASET2HEADSIZE = {
+    'squad': 2,
+    'fever': 3,
+    'fnc': 4,
+    'leaders': 3
+}
+
+DATASET2SPANLOSS = {
+    'squad': True,
+    'fever': True,
+    'fnc': False,
+    'leaders': False
+}
+
+
+DATASET2IMPOSIBBLE_ = {
+    'fever': {0: False, 1: False, 2: True},
+    'fnc': {0: False, 1: True, 2: False, 3: False},
+    'leaders': {0: False, 1: True, 2: False}
 }
 
 class SquadExample(object):
@@ -137,6 +164,168 @@ class InputFeatures(object):
         self.head_idx = head_idx
 
 
+
+def other_entries(val_ratio = .2):
+    input_data = []
+    input_data_val = []
+    # FEVER
+    df = pd.read_hdf('../examples/temp/datasets/fever/shared_task_dev-new.h5')
+    entry_ = {}
+    entry_['title'] = 'fever'
+    entry_['paragraphs'] = []
+    some_texts = []
+    temp_labs = []
+    c = 0
+    for item in df.to_dict('records'):
+        for ind in range(len(item['related_line_nums'])):
+            if item['label'] != 2:
+                qas = [{}]
+                qas[0]['question'] = item['claim']
+                qas[0]['id'] = 'fever_' + str(c)
+                c += 1
+                qas[0]['answers'] = [
+                    {'text': item['related_sentences'][ind][item['related_line_nums'][ind]],
+                     'answer_start': 0 if item['related_line_nums'][ind] == 0 else sum(
+                         [len(item['related_sentences'][ind][i]) for i in range(item['related_line_nums'][ind])]
+                     )}
+                ]
+                if item['label'] == 0:  # False, wose than impossible
+                    qas[0]['is_impossible'] = 2
+                    temp_labs.append(2)
+                elif item['label'] == 1:  # True, not impossible
+                    qas[0]['is_impossible'] = 0
+                    temp_labs.append(0)
+                else:
+                    raise Exception('label error')
+                pa = {'qas': qas, 'context': ''.join(item['related_sentences'][ind])}
+                some_texts.append(''.join(item['related_sentences'][ind]))
+                entry_['paragraphs'].append(pa)
+            else:
+                if len(some_texts):
+                    qas = [{}]
+                    qas[0]['question'] = item['claim']
+                    qas[0]['id'] = 'fever_' + str(c)
+                    c += 1
+                    qas[0]['plausible_answers'] = [],
+                    qas[0]['answers'] = [],
+                    if item['label'] == 2:  # Impossible
+                        qas[0]['is_impossible'] = 1
+                        temp_labs.append(1)
+                    else:
+                        raise Exception('label error')
+                    pa = {'qas': qas, 'context': np.random.choice(some_texts)}
+                    entry_['paragraphs'].append(pa)
+
+    inds = list(range(len(entry_['paragraphs'])))
+    trash, trash, trash, trash, train_idx, val_idx = train_test_split(
+        inds, temp_labs, inds, test_size=val_ratio)
+
+    entry_train = deepcopy(entry_)
+    entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
+    entry_val = deepcopy(entry_)
+    entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
+    input_data.append(deepcopy(entry_train))
+    input_data_val.append(entry_val)
+
+    del entry_
+    del df
+
+    # fnc
+
+    ts = pd.read_csv('../examples/temp/datasets/fnc/train_stances.csv')
+
+    tb = pd.read_csv('../examples/temp/datasets/fnc/train_bodies.csv')
+
+    bodyid2text = {}
+
+    for i in tb.to_dict('records'):
+        bodyid2text[i['Body ID']] = i['articleBody']
+
+    stance2lab = {'agree': 3, 'disagree': 0, 'discuss': 2, 'unrelated': 1}
+
+    entry_ = {}
+    entry_['title'] = 'fnc'
+    entry_['paragraphs'] = []
+    temp_labs = []
+
+    c = 0
+    for item in ts.to_dict('records'):
+        qas = [{}]
+        qas[0]['question'] = item['Headline']
+        qas[0]['id'] = 'fnc_' + str(c)
+        c += 1
+        qas[0]['answers'] = [
+            {'text': 'unknown',
+             'answer_start': 0}
+        ]
+        qas[0]['is_impossible'] = stance2lab[item['Stance']]
+        temp_labs.append(stance2lab[item['Stance']])
+
+        pa = {'qas': qas, 'context': bodyid2text[item['Body ID']]}
+
+        entry_['paragraphs'].append(pa)
+
+    inds = list(range(len(entry_['paragraphs'])))
+    trash, trash, trash, trash, train_idx, val_idx = train_test_split(
+        inds, temp_labs, inds, test_size=val_ratio)
+
+    entry_train = deepcopy(entry_)
+    entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
+    entry_val = deepcopy(entry_)
+    entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
+    input_data.append(deepcopy(entry_train))
+    input_data_val.append(entry_val)
+
+    del entry_
+    del tb
+    del ts
+    del bodyid2text
+
+    # leaders
+    df = pd.read_pickle('../examples/temp/datasets/leaders/leaders.pickle')
+
+    entry_ = {}
+    entry_['title'] = 'leaders'
+    entry_['paragraphs'] = []
+    temp_labs = []
+
+    c = 0
+    for item in df.to_dict('records'):
+        qas = [{}]
+        qas[0]['question'] = item['claim']
+        qas[0]['id'] = 'leaders_' + str(c)
+        c += 1
+        qas[0]['answers'] = [
+            {'text': 'unknown',
+             'answer_start': 0}
+        ]
+        qas[0]['is_impossible'] = item['label']
+        temp_labs.append(item['label'])
+
+        pa = {'qas': qas, 'context': ''.join(item['texts'])}
+
+        entry_['paragraphs'].append(pa)
+
+    inds = list(range(len(entry_['paragraphs'])))
+    trash, trash, trash, trash, train_idx, val_idx = train_test_split(
+        inds, temp_labs, inds, test_size=val_ratio)
+
+
+    entry_train = deepcopy(entry_)
+    entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
+    entry_val = deepcopy(entry_)
+    entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
+    input_data.append(deepcopy(entry_train))
+    input_data_val.append(entry_val)
+
+    del df
+
+    pickle.dump(input_data, open('temp/datasets/mixed/train_entries.pkl', 'wb'))
+    pickle.dump(input_data_val, open('temp/datasets/mixed/val_entries.pkl', 'wb'))
+
+    return input_data, input_data_val
+
+
 def read_squad_examples(input_file, is_training, version_2_with_negative):
     """Read a SQuAD json file into a list of SquadExample."""
     with open(input_file, "r", encoding='utf-8') as reader:
@@ -148,11 +337,25 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
         return False
 
     # # Todo: remove
-    # input_data = input_data[:5]
+    input_data = input_data[:1]
+
+    # Todo: hack other data in
+    other_entries_train, other_entries_val = other_entries()
+
+    if is_training:
+        input_data += other_entries_train
+    else:
+        input_data += other_entries_val
 
     examples = []
-    for entry in tqdm(input_data):
-        for paragraph in entry["paragraphs"]:
+
+    for entry in input_data:
+        if entry['title'] not in ['fever', 'fnc', 'leaders']:
+            dataset_name = 'squad'
+        else:
+            dataset_name = entry['title']
+
+        for paragraph in tqdm(entry["paragraphs"]):
             paragraph_text = paragraph["context"]
 
             # Todo: hack SQUAD answer span to be sentence based
@@ -183,75 +386,145 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
                     prev_is_whitespace = False
                 char_to_word_offset.append(len(doc_tokens) - 1)
 
-            for qa in paragraph["qas"]:
-                qas_id = qa["id"]
-                question_text = qa["question"]
-                start_position = None
-                end_position = None
-                orig_answer_text = None
-                is_impossible = False
-                if is_training:
-                    if version_2_with_negative:
-                        is_impossible = qa["is_impossible"]
-                    if (len(qa["answers"]) != 1) and (not is_impossible):
-                        raise ValueError(
-                            "For training, each question should have exactly 1 answer.")
-                    if not is_impossible:
-                        answer = qa["answers"][0]
-                        orig_answer_text = answer["text"]
-                        answer_offset = answer["answer_start"]
-                        answer_length = len(orig_answer_text)
+            if dataset_name == 'squad':
+                for qa in paragraph["qas"]:
+                    qas_id = qa["id"]
+                    question_text = qa["question"]
+                    start_position = None
+                    end_position = None
+                    orig_answer_text = None
+                    is_impossible = False
+                    if is_training:
+                        if version_2_with_negative:
+                            is_impossible = qa["is_impossible"]
+                        if (len(qa["answers"]) != 1) and (not is_impossible):
+                            raise ValueError(
+                                "For training, each question should have exactly 1 answer.")
 
-                        # Todo: hack SQUAD
+                        if not is_impossible:
+                            answer = qa["answers"][0]
+                            orig_answer_text = answer["text"]
+                            answer_offset = answer["answer_start"]
+                            answer_length = len(orig_answer_text)
 
-                        answer_offset_left, answer_offset_right = char_to_sent_bound_idx[answer_offset]
-                        answer_offset_left_, answer_offset_right_ = char_to_sent_bound_idx[answer_offset + answer_length - 1]
-                        answer_offset_left = min(answer_offset_left, answer_offset_left_)
-                        answer_offset_right = max(answer_offset_right, answer_offset_right_)
-                        start_position = max(0, char_to_word_offset[answer_offset_left])
-                        end_position = char_to_word_offset[answer_offset_right]
+                            # Todo: hack SQUAD
 
-                        # start_position = char_to_word_offset[answer_offset]
-                        # end_position = char_to_word_offset[answer_offset + answer_length - 1]
+                            answer_offset_left, answer_offset_right = char_to_sent_bound_idx[answer_offset]
+                            answer_offset_left_, answer_offset_right_ = char_to_sent_bound_idx[answer_offset + answer_length - 1]
+                            answer_offset_left = min(answer_offset_left, answer_offset_left_)
+                            answer_offset_right = max(answer_offset_right, answer_offset_right_)
+                            start_position = max(0, char_to_word_offset[answer_offset_left])
+                            end_position = char_to_word_offset[answer_offset_right]
+
+                            # start_position = char_to_word_offset[answer_offset]
+                            # end_position = char_to_word_offset[answer_offset + answer_length - 1]
 
 
-                        # Only add answers where the text can be exactly recovered from the
-                        # document. If this CAN'T happen it's likely due to weird Unicode
-                        # stuff so we will just skip the example.
-                        #
-                        # Note that this means for training mode, every example is NOT
-                        # guaranteed to be preserved.
-                        actual_text = " ".join(doc_tokens[start_position:(end_position + 1)])
-                        cleaned_answer_text = " ".join(
-                            whitespace_tokenize(orig_answer_text))
-                        if actual_text.find(cleaned_answer_text) == -1:
-                            logger.warning("Could not find answer: '%s' vs. '%s'",
-                                           actual_text, cleaned_answer_text)
-                            print(answer_offset, answer_offset + answer_length - 1, answer_offset_left, answer_offset_right)
-                            continue
+                            # Only add answers where the text can be exactly recovered from the
+                            # document. If this CAN'T happen it's likely due to weird Unicode
+                            # stuff so we will just skip the example.
+                            #
+                            # Note that this means for training mode, every example is NOT
+                            # guaranteed to be preserved.
+                            actual_text = " ".join(doc_tokens[start_position:(end_position + 1)])
+                            cleaned_answer_text = " ".join(
+                                whitespace_tokenize(orig_answer_text))
+                            if actual_text.find(cleaned_answer_text) == -1:
+                                logger.warning("Could not find answer: '%s' vs. '%s'",
+                                               actual_text, cleaned_answer_text)
 
-                        # if np.random.random() < .01:
-                        #     print('\n',cleaned_answer_text,'\n--------------------\n', actual_text,'\n')
+                                continue
 
-                        orig_answer_text = actual_text
 
-                    else:
-                        start_position = -1
-                        end_position = -1
-                        orig_answer_text = ""
+                        else:
+                            # print(qa)
+                            # raise Exception('stop, impossible')
+                            start_position = -1
+                            end_position = -1
+                            orig_answer_text = ""
 
-                example = SquadExample(
-                    qas_id=qas_id,
-                    question_text=question_text,
-                    doc_tokens=doc_tokens,
-                    orig_answer_text=orig_answer_text,
-                    start_position=start_position,
-                    end_position=end_position,
-                    is_impossible=1 if is_impossible else 0, # 0 means support
-                    span_loss=True,
-                    dataset_type='squad'
-                )
-                examples.append(example)
+                    example = SquadExample(
+                        qas_id=qas_id,
+                        question_text=question_text,
+                        doc_tokens=doc_tokens,
+                        orig_answer_text=orig_answer_text,
+                        start_position=start_position,
+                        end_position=end_position,
+                        is_impossible=1 if is_impossible else 0,
+                        span_loss=DATASET2SPANLOSS[dataset_name],
+                        dataset_type=dataset_name
+                    )
+
+
+                    examples.append(example)
+            else:
+                # Todo: change loading for others
+                for qa in paragraph["qas"]:
+                    qas_id = qa["id"]
+                    question_text = qa["question"]
+                    start_position = None
+                    end_position = None
+                    orig_answer_text = None
+
+                    is_impossible_ = DATASET2IMPOSIBBLE_[dataset_name][qa['is_impossible']]
+
+                    if is_training:
+
+                        if not is_impossible_:
+                            answer = qa["answers"][0]
+                            orig_answer_text = answer["text"]
+                            answer_offset = answer["answer_start"]
+                            answer_length = len(orig_answer_text)
+
+                            # Todo: hack SQUAD
+
+                            answer_offset_left, answer_offset_right = char_to_sent_bound_idx[answer_offset]
+                            answer_offset_left_, answer_offset_right_ = char_to_sent_bound_idx[
+                                answer_offset + answer_length - 1]
+                            answer_offset_left = min(answer_offset_left, answer_offset_left_)
+                            answer_offset_right = max(answer_offset_right, answer_offset_right_)
+                            start_position = max(0, char_to_word_offset[answer_offset_left])
+                            end_position = char_to_word_offset[answer_offset_right]
+
+                            # start_position = char_to_word_offset[answer_offset]
+                            # end_position = char_to_word_offset[answer_offset + answer_length - 1]
+
+                            # Only add answers where the text can be exactly recovered from the
+                            # document. If this CAN'T happen it's likely due to weird Unicode
+                            # stuff so we will just skip the example.
+                            #
+                            # Note that this means for training mode, every example is NOT
+                            # guaranteed to be preserved.
+                            actual_text = " ".join(doc_tokens[start_position:(end_position + 1)])
+                            cleaned_answer_text = " ".join(
+                                whitespace_tokenize(orig_answer_text))
+                            if actual_text.find(cleaned_answer_text) == -1:
+                                logger.warning("Could not find answer: '%s' vs. '%s'",
+                                               actual_text, cleaned_answer_text)
+                                print(answer_offset, answer_offset + answer_length - 1, answer_offset_left,
+                                      answer_offset_right)
+                                continue
+
+                        else:
+                            # print(qa)
+                            # raise Exception('stop, impossible')
+                            start_position = -1
+                            end_position = -1
+                            orig_answer_text = ""
+
+                    example = SquadExample(
+                        qas_id=qas_id,
+                        question_text=question_text,
+                        doc_tokens=doc_tokens,
+                        orig_answer_text=orig_answer_text,
+                        start_position=start_position,
+                        end_position=end_position,
+                        is_impossible=qa['is_impossible'],
+                        span_loss=DATASET2SPANLOSS[dataset_name],
+                        dataset_type=dataset_name
+                    )
+
+                    examples.append(example)
     return examples
 
 
@@ -772,6 +1045,10 @@ RawResultExtended = collections.namedtuple("RawResultExtended",
     ["unique_id", "start_top_log_probs", "start_top_index",
      "end_top_log_probs", "end_top_index", "cls_logits"])
 
+RawResultExtendedGeneral = collections.namedtuple("RawResultExtended",
+    ["unique_id", "start_top_log_probs", "start_top_index",
+     "end_top_log_probs", "end_top_index", "cls_logits", "cls_logits_full"])
+
 
 def write_predictions_extended(all_examples, all_features, all_results, n_best_size,
                                 max_answer_length, output_prediction_file,
@@ -963,6 +1240,35 @@ def write_predictions_extended(all_examples, all_features, all_results, n_best_s
 
     return out_eval
 
+
+def write_predictions_extended_general(all_examples, all_features, all_results, n_best_size,
+                                max_answer_length, output_prediction_file,
+                                output_nbest_file,
+                                output_null_log_odds_file, orig_data_file,
+                                start_n_top, end_n_top, version_2_with_negative,
+                                tokenizer, verbose_logging):
+    """ XLNet write prediction logic (more complex than Bert's).
+        Write final predictions to the json file and log-odds of null if needed.
+
+        Requires utils_squad_evaluate.py
+    """
+    out_eval = write_predictions_extended(all_examples, all_features, all_results, n_best_size,
+                                max_answer_length, output_prediction_file,
+                                output_nbest_file,
+                                output_null_log_odds_file, orig_data_file,
+                                start_n_top, end_n_top, version_2_with_negative,
+                                tokenizer, verbose_logging)
+    general_results = {}
+    for ind, i in enumerate(all_features):
+        qid = all_examples[i.example_index].qas_id
+        if qid not in general_results:
+            general_results[qid] = []
+        general_results[qid].append(all_results[ind].cls_logits_full)
+
+    with open(output_prediction_file.replace('_', '_general_'), "w") as writer:
+        writer.write(json.dumps(general_results, indent=4) + "\n")
+
+    return out_eval
 
 def get_final_text(pred_text, orig_text, do_lower_case, verbose_logging=False):
     """Project the tokenized prediction back to the original text."""

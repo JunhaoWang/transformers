@@ -1429,7 +1429,7 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
         loss, start_scores, end_scores = outputs[:2]
 
     """
-    def __init__(self, config, cls_head_sizes = [3, 3]):
+    def __init__(self, config):
         super(XLNetForQuestionAnsweringGeneralized, self).__init__(config)
         self.start_n_top = config.start_n_top
         self.end_n_top = config.end_n_top
@@ -1437,9 +1437,9 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
         self.transformer = XLNetModel(config)
         self.start_logits = PoolerStartLogits(config)
         self.end_logits = PoolerEndLogits(config)
-        self.cls_head_sizes = cls_head_sizes
+        self.cls_head_sizes = config.cls_head_sizes
         self.answer_classes = torch.nn.ModuleList(
-            [PoolerAnswerClassGeneralized(config, k) for k in cls_head_sizes]
+            [PoolerAnswerClassGeneralized(config, k) for k in self.cls_head_sizes]
         )
 
         self.init_weights()
@@ -1560,6 +1560,8 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
             end_top_index = end_top_index.view(-1, self.start_n_top * self.end_n_top)
 
             cls_logits_all = torch.zeros_like(head_idx).float()
+            cls_logits_full = torch.ones_like(head_idx).long()
+
 
             for i in range(len(self.cls_head_sizes)):
                 head_loss_idx = (head_idx == i).nonzero().T
@@ -1576,9 +1578,11 @@ class XLNetForQuestionAnsweringGeneralized(XLNetPreTrainedModel):
                                                         cls_index=cls_index_head_loss)
 
                     cls_logits_all[head_loss_idx.squeeze(0)] = cls_logits[:,1]
+                    cls_logits_full[head_loss_idx.squeeze(0)] = torch.argmax(cls_logits, dim=1)
 
 
-            outputs = (start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits_all) + outputs
+            outputs = (start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits_all,
+                       cls_logits_full) + outputs
 
         # return start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits
         # or (if labels are provided) (total_loss,)

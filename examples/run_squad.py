@@ -47,8 +47,8 @@ from transformers import (WEIGHTS_NAME, BertConfig,
 from transformers import AdamW, WarmupLinearSchedule
 
 from utils_squad import (read_squad_examples, convert_examples_to_features,
-                         RawResult, write_predictions,
-                         RawResultExtended, write_predictions_extended)
+                         RawResult, write_predictions, RawResultExtendedGeneral,
+                         RawResultExtended, write_predictions_extended, write_predictions_extended_general)
 
 # The follwing import is the official SQuAD evaluation script (2.0).
 # You can remove it from the dependencies if you are using this script outside of the library
@@ -269,6 +269,16 @@ def evaluate(args, model, tokenizer, prefix=""):
                                            end_top_log_probs    = to_list(outputs[2][i]),
                                            end_top_index        = to_list(outputs[3][i]),
                                            cls_logits           = to_list(outputs[4][i]))
+            elif args.model_type in ['xlnetgeneral']:
+                # XLNet uses a more complex post-processing procedure
+                result = RawResultExtendedGeneral(unique_id            = unique_id,
+                                           start_top_log_probs  = to_list(outputs[0][i]),
+                                           start_top_index      = to_list(outputs[1][i]),
+                                           end_top_log_probs    = to_list(outputs[2][i]),
+                                           end_top_index        = to_list(outputs[3][i]),
+                                           cls_logits           = to_list(outputs[4][i]),
+                                           cls_logits_full      = to_list(outputs[5][i])
+                                           )
             else:
                 result = RawResult(unique_id    = unique_id,
                                    start_logits = to_list(outputs[0][i]),
@@ -291,6 +301,13 @@ def evaluate(args, model, tokenizer, prefix=""):
                         model.config.start_n_top, model.config.end_n_top,
                         args.version_2_with_negative, tokenizer, args.verbose_logging)
     # Todo: add xlnetgeneral
+    elif args.model_type in ['xlnetgeneral']:
+        # XLNet uses a more complex post-processing procedure
+        write_predictions_extended_general(examples, features, all_results, args.n_best_size,
+                        args.max_answer_length, output_prediction_file,
+                        output_nbest_file, output_null_log_odds_file, args.predict_file,
+                        model.config.start_n_top, model.config.end_n_top,
+                        args.version_2_with_negative, tokenizer, args.verbose_logging)
 
     else:
         write_predictions(examples, features, all_results, args.n_best_size,
@@ -325,8 +342,10 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                                                 is_training=not evaluate,
                                                 version_2_with_negative=args.version_2_with_negative)
 
+        print('Finish reading exaples')
+
         # # Todo remove
-        # examples = examples[:5]
+        examples = examples[:1]
 
         features = convert_examples_to_features(examples=examples,
                                                 tokenizer=tokenizer,
@@ -334,6 +353,8 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                                                 doc_stride=args.doc_stride,
                                                 max_query_length=args.max_query_length,
                                                 is_training=not evaluate)
+
+        print('Finish converting examples to features')
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
             torch.save(features, cached_features_file)
@@ -432,7 +453,7 @@ def main():
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
     # Todo 3.0
-    parser.add_argument("--num_train_epochs", default=3.0, type=float,
+    parser.add_argument("--num_train_epochs", default=1.0, type=float,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
@@ -494,7 +515,7 @@ def main():
         torch.distributed.init_process_group(backend='nccl')
         args.n_gpu = 1
     # Todo: change
-    args.device = device
+    args.device = 'cpu' # device
 
     # Setup logging
     logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -512,7 +533,21 @@ def main():
 
     args.model_type = args.model_type.lower()
     config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+
     config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path)
+
+    if args.model_type in ['xlnetgeneral']:
+        from utils_squad import DATASET2HEAD, DATASET2HEADSIZE
+        from collections import defaultdict
+        HEAD2DATASET = defaultdict(list)
+        for i in DATASET2HEAD:
+            HEAD2DATASET[DATASET2HEAD[i]].append(i)
+        config_cls_head_sizes = []
+        for i in sorted(list(set(HEAD2DATASET))):
+            config_cls_head_sizes.append(DATASET2HEADSIZE[HEAD2DATASET[i][0]])
+
+        config.cls_head_sizes = config_cls_head_sizes
+
     tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path, do_lower_case=args.do_lower_case)
     model = model_class.from_pretrained(args.model_name_or_path, from_tf=bool('.ckpt' in args.model_name_or_path), config=config)
 
