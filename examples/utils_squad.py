@@ -336,8 +336,8 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
             return True
         return False
 
-    # # Todo: remove
-    input_data = input_data[:1]
+    # # # Todo: remove
+    # input_data = input_data[:1]
 
     # Todo: hack other data in
     other_entries_train, other_entries_val = other_entries()
