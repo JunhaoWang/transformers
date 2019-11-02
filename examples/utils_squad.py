@@ -255,7 +255,7 @@ def other_entries(val_ratio = .2):
         qas[0]['id'] = 'fnc_' + str(c)
         c += 1
         qas[0]['answers'] = [
-            {'text': 'unknown',
+            {'text': '',
              'answer_start': 0}
         ]
         qas[0]['is_impossible'] = stance2lab[item['Stance']]
@@ -296,7 +296,7 @@ def other_entries(val_ratio = .2):
         qas[0]['id'] = 'leaders_' + str(c)
         c += 1
         qas[0]['answers'] = [
-            {'text': 'unknown',
+            {'text': '',
              'answer_start': 0}
         ]
         qas[0]['is_impossible'] = item['label']
@@ -432,7 +432,8 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
                             if actual_text.find(cleaned_answer_text) == -1:
                                 logger.warning("Could not find answer: '%s' vs. '%s'",
                                                actual_text, cleaned_answer_text)
-
+                                print(answer_offset, answer_offset + answer_length - 1, answer_offset_left,
+                                      answer_offset_right)
                                 continue
 
 
