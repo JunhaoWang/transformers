@@ -42,6 +42,7 @@ def custom_pipeline(nlp):
 
 
 nlp = spacy.load("en_core_web_sm", create_pipeline=custom_pipeline)
+nlp.max_length = 15000000000000000000000000000000
 
 from transformers.tokenization_bert import BasicTokenizer, whitespace_tokenize
 
@@ -72,10 +73,16 @@ DATASET2SPANLOSS = {
 }
 
 
+# DATASET2IMPOSIBBLE_ = {
+#     'fever': {0: False, 1: False, 2: True},
+#     'fnc': {0: False, 1: True, 2: False, 3: False},
+#     'leaders': {0: False, 1: True, 2: False}
+# }
+
 DATASET2IMPOSIBBLE_ = {
     'fever': {0: False, 1: False, 2: True},
-    'fnc': {0: False, 1: True, 2: False, 3: False},
-    'leaders': {0: False, 1: True, 2: False}
+    'fnc': {0: True, 1: True, 2: True, 3: True},
+    'leaders': {0: True, 1: True, 2: True}
 }
 
 class SquadExample(object):
@@ -168,6 +175,42 @@ class InputFeatures(object):
 def other_entries(val_ratio = .2):
     input_data = []
     input_data_val = []
+
+    # leaders
+    df = pd.read_pickle('../examples/temp/datasets/leaders/leaders.pickle')
+
+    entry_ = {}
+    entry_['title'] = 'leaders'
+    entry_['paragraphs'] = []
+    temp_labs = []
+
+    c = 0
+    for item in df.to_dict('records'):
+        qas = [{}]
+        qas[0]['question'] = item['claim']
+        qas[0]['id'] = 'leaders_' + str(c)
+        c += 1
+        qas[0]['answers'] = []
+        qas[0]['is_impossible'] = item['label']
+        temp_labs.append(item['label'])
+
+        pa = {'qas': qas, 'context': ''.join(item['texts'])}
+
+        entry_['paragraphs'].append(pa)
+
+    inds = list(range(len(entry_['paragraphs'])))
+    trash, trash, trash, trash, train_idx, val_idx = train_test_split(
+        inds, temp_labs, inds, test_size=val_ratio)
+
+    entry_train = deepcopy(entry_)
+    entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
+    entry_val = deepcopy(entry_)
+    entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
+    input_data.append(deepcopy(entry_train))
+    input_data_val.append(entry_val)
+
+    del df
+
     # FEVER
     df = pd.read_hdf('../examples/temp/datasets/fever/shared_task_dev-new.h5')
     entry_ = {}
@@ -254,10 +297,7 @@ def other_entries(val_ratio = .2):
         qas[0]['question'] = item['Headline']
         qas[0]['id'] = 'fnc_' + str(c)
         c += 1
-        qas[0]['answers'] = [
-            {'text': '',
-             'answer_start': 0}
-        ]
+        qas[0]['answers'] = []
         qas[0]['is_impossible'] = stance2lab[item['Stance']]
         temp_labs.append(stance2lab[item['Stance']])
 
@@ -281,44 +321,6 @@ def other_entries(val_ratio = .2):
     del ts
     del bodyid2text
 
-    # leaders
-    df = pd.read_pickle('../examples/temp/datasets/leaders/leaders.pickle')
-
-    entry_ = {}
-    entry_['title'] = 'leaders'
-    entry_['paragraphs'] = []
-    temp_labs = []
-
-    c = 0
-    for item in df.to_dict('records'):
-        qas = [{}]
-        qas[0]['question'] = item['claim']
-        qas[0]['id'] = 'leaders_' + str(c)
-        c += 1
-        qas[0]['answers'] = [
-            {'text': '',
-             'answer_start': 0}
-        ]
-        qas[0]['is_impossible'] = item['label']
-        temp_labs.append(item['label'])
-
-        pa = {'qas': qas, 'context': ''.join(item['texts'])}
-
-        entry_['paragraphs'].append(pa)
-
-    inds = list(range(len(entry_['paragraphs'])))
-    trash, trash, trash, trash, train_idx, val_idx = train_test_split(
-        inds, temp_labs, inds, test_size=val_ratio)
-
-
-    entry_train = deepcopy(entry_)
-    entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
-    entry_val = deepcopy(entry_)
-    entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
-    input_data.append(deepcopy(entry_train))
-    input_data_val.append(entry_val)
-
-    del df
 
     pickle.dump(input_data, open('temp/datasets/mixed/train_entries.pkl', 'wb'))
     pickle.dump(input_data_val, open('temp/datasets/mixed/val_entries.pkl', 'wb'))
@@ -343,9 +345,9 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
     other_entries_train, other_entries_val = other_entries()
 
     if is_training:
-        input_data += other_entries_train
+        input_data = other_entries_train + input_data
     else:
-        input_data += other_entries_val
+        input_data = other_entries_val + input_data
 
     examples = []
 
