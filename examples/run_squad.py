@@ -46,7 +46,7 @@ from transformers import (WEIGHTS_NAME, BertConfig,
 
 from transformers import AdamW, WarmupLinearSchedule
 
-from utils_squad import (read_squad_examples, convert_examples_to_features,
+from utils_squad import (read_squad_examples, convert_examples_to_features, convert_examples_to_features_parallel,
                          RawResult, write_predictions, RawResultExtendedGeneral,
                          RawResultExtended, write_predictions_extended, write_predictions_extended_general)
 
@@ -347,7 +347,8 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         # # # Todo remove
         # examples = examples[:1]
 
-        features = convert_examples_to_features(examples=examples,
+        # Todo try parallel
+        features = convert_examples_to_features_parallel(examples=examples,
                                                 tokenizer=tokenizer,
                                                 max_seq_length=args.max_seq_length,
                                                 doc_stride=args.doc_stride,

@@ -33,6 +33,8 @@ from copy import deepcopy
 from sklearn.model_selection import train_test_split
 import pickle
 
+from joblib import Parallel, delayed
+
 def custom_pipeline(nlp):
     return (nlp.tagger, )
     # for token in nlp[:-1]:
@@ -528,7 +530,47 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
                     )
 
                     examples.append(example)
+    if is_training:
+        pickle.dump(examples, open('temp/datasets/mixed/train_exampes.pkl', 'wb'))
+    else:
+        pickle.dump(examples, open('temp/datasets/mixed/val_examples.pkl', 'wb'))
     return examples
+
+def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
+                                 doc_stride, max_query_length, is_training,
+                                 cls_token_at_end=False,
+                                 cls_token='[CLS]', sep_token='[SEP]', pad_token=0,
+                                 sequence_a_segment_id=0, sequence_b_segment_id=1,
+                                 cls_token_segment_id=0, pad_token_segment_id=0,
+                                 mask_padding_with_zero=True):
+    def chunks(l, n):
+        """Yield successive n-sized chunks from l."""
+        for i in range(0, len(l), n):
+            yield l[i:i + n]
+
+
+    nested_examples = list(chunks(examples, 100)) # Todo: split into nested
+    len_nested = len(nested_examples)
+
+    results = Parallel(n_jobs=10)(delayed(convert_examples_to_features)(
+        examples_, tokenizer_, max_seq_length_,
+        doc_stride_, max_query_length_, is_training_,
+        cls_token_at_end_, cls_token_, sep_token_, pad_token_,
+        sequence_a_segment_id_, sequence_b_segment_id_,
+        cls_token_segment_id_, pad_token_segment_id_,
+        mask_padding_with_zero_) for examples_, tokenizer_, max_seq_length_,
+            doc_stride_, max_query_length_, is_training_,
+            cls_token_at_end_, cls_token_, sep_token_, pad_token_,
+            sequence_a_segment_id_, sequence_b_segment_id_,
+            cls_token_segment_id_, pad_token_segment_id_,
+            mask_padding_with_zero_ in zip(nested_examples, [tokenizer] * len_nested, [max_seq_length] * len_nested,
+            [doc_stride] * len_nested, [max_query_length] * len_nested, [is_training] * len_nested,
+            [cls_token_at_end] * len_nested, [cls_token] * len_nested, [sep_token] * len_nested, [pad_token] * len_nested,
+            [sequence_a_segment_id] * len_nested, [sequence_b_segment_id] * len_nested,
+            [cls_token_segment_id] * len_nested, [pad_token_segment_id] * len_nested,
+            [mask_padding_with_zero] * len_nested))
+
+    return results
 
 
 def convert_examples_to_features(examples, tokenizer, max_seq_length,
@@ -698,30 +740,30 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                 start_position = cls_index
                 end_position = cls_index
 
-            if example_index < 20:
-                logger.info("*** Example ***")
-                logger.info("unique_id: %s" % (unique_id))
-                logger.info("example_index: %s" % (example_index))
-                logger.info("doc_span_index: %s" % (doc_span_index))
-                logger.info("tokens: %s" % " ".join(tokens))
-                logger.info("token_to_orig_map: %s" % " ".join([
-                    "%d:%d" % (x, y) for (x, y) in token_to_orig_map.items()]))
-                logger.info("token_is_max_context: %s" % " ".join([
-                    "%d:%s" % (x, y) for (x, y) in token_is_max_context.items()
-                ]))
-                logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-                logger.info(
-                    "input_mask: %s" % " ".join([str(x) for x in input_mask]))
-                logger.info(
-                    "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-                if is_training and span_is_impossible:
-                    logger.info("impossible example")
-                if is_training and not span_is_impossible:
-                    answer_text = " ".join(tokens[start_position:(end_position + 1)])
-                    logger.info("start_position: %d" % (start_position))
-                    logger.info("end_position: %d" % (end_position))
-                    logger.info(
-                        "answer: %s" % (answer_text))
+            # if example_index < 20:
+            #     logger.info("*** Example ***")
+            #     logger.info("unique_id: %s" % (unique_id))
+            #     logger.info("example_index: %s" % (example_index))
+            #     logger.info("doc_span_index: %s" % (doc_span_index))
+            #     logger.info("tokens: %s" % " ".join(tokens))
+            #     logger.info("token_to_orig_map: %s" % " ".join([
+            #         "%d:%d" % (x, y) for (x, y) in token_to_orig_map.items()]))
+            #     logger.info("token_is_max_context: %s" % " ".join([
+            #         "%d:%s" % (x, y) for (x, y) in token_is_max_context.items()
+            #     ]))
+            #     logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+            #     logger.info(
+            #         "input_mask: %s" % " ".join([str(x) for x in input_mask]))
+            #     logger.info(
+            #         "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+            #     if is_training and span_is_impossible:
+            #         logger.info("impossible example")
+            #     if is_training and not span_is_impossible:
+            #         answer_text = " ".join(tokens[start_position:(end_position + 1)])
+            #         logger.info("start_position: %d" % (start_position))
+            #         logger.info("end_position: %d" % (end_position))
+            #         logger.info(
+            #             "answer: %s" % (answer_text))
             span_loss = example.span_loss
             dataset_type = example.dataset_type
             if span_is_impossible:
