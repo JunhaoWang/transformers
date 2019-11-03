@@ -35,6 +35,12 @@ import pickle
 
 from joblib import Parallel, delayed
 
+
+def chunks(l, n):
+    """Yield successive n-sized chunks from l."""
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
+
 def custom_pipeline(nlp):
     return (nlp.tagger, )
     # for token in nlp[:-1]:
@@ -510,6 +516,24 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
                 examples.append(example)
     return examples
 
+
+def read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs):
+    nested_paragraphs = list(chunks(paragraphs, 100))  # Todo: split into nested
+    len_nested = len(nested_paragraphs)
+
+    results = Parallel(n_jobs=10)(delayed(read_squad_examples_helper)(
+        is_training_,
+        version_2_with_negative_,
+        dataset_name_,
+        paragraphs_) for is_training_,
+                version_2_with_negative_,
+                dataset_name_,
+                paragraphs_ in
+          zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
+              [dataset_name] * len_nested, paragraphs))
+
+    return results
+
 def read_squad_examples(input_file, is_training, version_2_with_negative):
     """Read a SQuAD json file into a list of SquadExample."""
     with open(input_file, "r", encoding='utf-8') as reader:
@@ -544,180 +568,12 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
         paragraphs = entry["paragraphs"]
 
         # Todo: try parallelize
-        examples += read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs)
-
-        # for paragraph in tqdm(entry["paragraphs"]):
-        #
-        #     paragraph_text = paragraph["context"]
-        #
-        #     # Todo: hack SQUAD answer span to be sentence based
-        #     spacy_paragraph_text = nlp(paragraph_text)
-        #     paragraph_sents = list(spacy_paragraph_text.sents)
-        #     char_to_sent_bound_idx = {}
-        #     for ind, i in enumerate(paragraph_sents):
-        #         if ind < len(paragraph_sents) - 1:
-        #             i_next = paragraph_sents[ind + 1]
-        #             s_start, s_end = i[0].idx, i_next[0].idx - 1
-        #         else:
-        #             s_start, s_end = i[0].idx, len(paragraph_text) - 1
-        #         for j in range(s_start, s_end + 1):
-        #             char_to_sent_bound_idx[j] = (s_start, s_end)
-        #
-        #
-        #     doc_tokens = []
-        #     char_to_word_offset = []
-        #     prev_is_whitespace = True
-        #     for c in paragraph_text:
-        #         if is_whitespace(c):
-        #             prev_is_whitespace = True
-        #         else:
-        #             if prev_is_whitespace:
-        #                 doc_tokens.append(c)
-        #             else:
-        #                 doc_tokens[-1] += c
-        #             prev_is_whitespace = False
-        #         char_to_word_offset.append(len(doc_tokens) - 1)
-        #
-        #     if dataset_name == 'squad':
-        #         for qa in paragraph["qas"]:
-        #             qas_id = qa["id"]
-        #             question_text = qa["question"]
-        #             start_position = None
-        #             end_position = None
-        #             orig_answer_text = None
-        #             is_impossible = False
-        #             if is_training:
-        #                 if version_2_with_negative:
-        #                     is_impossible = qa["is_impossible"]
-        #                 if (len(qa["answers"]) != 1) and (not is_impossible):
-        #                     raise ValueError(
-        #                         "For training, each question should have exactly 1 answer.")
-        #
-        #                 if not is_impossible:
-        #                     answer = qa["answers"][0]
-        #                     orig_answer_text = answer["text"]
-        #                     answer_offset = answer["answer_start"]
-        #                     answer_length = len(orig_answer_text)
-        #
-        #                     # Todo: hack SQUAD
-        #
-        #                     answer_offset_left, answer_offset_right = char_to_sent_bound_idx[answer_offset]
-        #                     answer_offset_left_, answer_offset_right_ = char_to_sent_bound_idx[answer_offset + answer_length - 1]
-        #                     answer_offset_left = min(answer_offset_left, answer_offset_left_)
-        #                     answer_offset_right = max(answer_offset_right, answer_offset_right_)
-        #                     start_position = max(0, char_to_word_offset[answer_offset_left])
-        #                     end_position = char_to_word_offset[answer_offset_right]
-        #
-        #                     # start_position = char_to_word_offset[answer_offset]
-        #                     # end_position = char_to_word_offset[answer_offset + answer_length - 1]
-        #
-        #
-        #                     # Only add answers where the text can be exactly recovered from the
-        #                     # document. If this CAN'T happen it's likely due to weird Unicode
-        #                     # stuff so we will just skip the example.
-        #                     #
-        #                     # Note that this means for training mode, every example is NOT
-        #                     # guaranteed to be preserved.
-        #                     actual_text = " ".join(doc_tokens[start_position:(end_position + 1)])
-        #                     cleaned_answer_text = " ".join(
-        #                         whitespace_tokenize(orig_answer_text))
-        #                     if actual_text.find(cleaned_answer_text) == -1:
-        #                         logger.warning("Could not find answer: '%s' vs. '%s'",
-        #                                        actual_text, cleaned_answer_text)
-        #                         print(answer_offset, answer_offset + answer_length - 1, answer_offset_left,
-        #                               answer_offset_right)
-        #                         continue
-        #
-        #
-        #                 else:
-        #                     # print(qa)
-        #                     # raise Exception('stop, impossible')
-        #                     start_position = -1
-        #                     end_position = -1
-        #                     orig_answer_text = ""
-        #
-        #             example = SquadExample(
-        #                 qas_id=qas_id,
-        #                 question_text=question_text,
-        #                 doc_tokens=doc_tokens,
-        #                 orig_answer_text=orig_answer_text,
-        #                 start_position=start_position,
-        #                 end_position=end_position,
-        #                 is_impossible=1 if is_impossible else 0,
-        #                 span_loss=DATASET2SPANLOSS[dataset_name],
-        #                 dataset_type=dataset_name
-        #             )
-        #
-        #
-        #             examples.append(example)
-        #     else:
-        #         # Todo: change loading for others
-        #         for qa in paragraph["qas"]:
-        #             qas_id = qa["id"]
-        #             question_text = qa["question"]
-        #             start_position = None
-        #             end_position = None
-        #             orig_answer_text = None
-        #
-        #             is_impossible_ = DATASET2IMPOSIBBLE_[dataset_name][qa['is_impossible']]
-        #
-        #             if is_training:
-        #
-        #                 if not is_impossible_:
-        #                     answer = qa["answers"][0]
-        #                     orig_answer_text = answer["text"]
-        #                     answer_offset = answer["answer_start"]
-        #                     answer_length = len(orig_answer_text)
-        #
-        #                     # Todo: hack SQUAD
-        #
-        #                     answer_offset_left, answer_offset_right = char_to_sent_bound_idx[answer_offset]
-        #                     answer_offset_left_, answer_offset_right_ = char_to_sent_bound_idx[
-        #                         answer_offset + answer_length - 1]
-        #                     answer_offset_left = min(answer_offset_left, answer_offset_left_)
-        #                     answer_offset_right = max(answer_offset_right, answer_offset_right_)
-        #                     start_position = max(0, char_to_word_offset[answer_offset_left])
-        #                     end_position = char_to_word_offset[answer_offset_right]
-        #
-        #                     # start_position = char_to_word_offset[answer_offset]
-        #                     # end_position = char_to_word_offset[answer_offset + answer_length - 1]
-        #
-        #                     # Only add answers where the text can be exactly recovered from the
-        #                     # document. If this CAN'T happen it's likely due to weird Unicode
-        #                     # stuff so we will just skip the example.
-        #                     #
-        #                     # Note that this means for training mode, every example is NOT
-        #                     # guaranteed to be preserved.
-        #                     actual_text = " ".join(doc_tokens[start_position:(end_position + 1)])
-        #                     cleaned_answer_text = " ".join(
-        #                         whitespace_tokenize(orig_answer_text))
-        #                     if actual_text.find(cleaned_answer_text) == -1:
-        #                         logger.warning("Could not find answer: '%s' vs. '%s'",
-        #                                        actual_text, cleaned_answer_text)
-        #                         print(answer_offset, answer_offset + answer_length - 1, answer_offset_left,
-        #                               answer_offset_right)
-        #                         continue
-        #
-        #                 else:
-        #                     # print(qa)
-        #                     # raise Exception('stop, impossible')
-        #                     start_position = -1
-        #                     end_position = -1
-        #                     orig_answer_text = ""
-        #
-        #             example = SquadExample(
-        #                 qas_id=qas_id,
-        #                 question_text=question_text,
-        #                 doc_tokens=doc_tokens,
-        #                 orig_answer_text=orig_answer_text,
-        #                 start_position=start_position,
-        #                 end_position=end_position,
-        #                 is_impossible=qa['is_impossible'],
-        #                 span_loss=DATASET2SPANLOSS[dataset_name],
-        #                 dataset_type=dataset_name
-        #             )
-        #
-        #             examples.append(example)
+        if dataset_name == 'squad':
+            logger.info('read {} examples'.format(dataset_name))
+            examples += read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs)
+        else:
+            logger.info('read {} examples'.format(dataset_name))
+            examples += read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs)
     if is_training:
         pickle.dump(examples, open('temp/datasets/mixed/train_exampes.pkl', 'wb'))
     else:
@@ -731,10 +587,6 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
                                  sequence_a_segment_id=0, sequence_b_segment_id=1,
                                  cls_token_segment_id=0, pad_token_segment_id=0,
                                  mask_padding_with_zero=True):
-    def chunks(l, n):
-        """Yield successive n-sized chunks from l."""
-        for i in range(0, len(l), n):
-            yield l[i:i + n]
 
 
     nested_examples = list(chunks(examples, 100)) # Todo: split into nested
