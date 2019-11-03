@@ -48,7 +48,6 @@ def custom_pipeline(nlp):
     #         nlp[token.i+1].is_sent_start = True
     # return nlp
 
-
 nlp = spacy.load("en_core_web_sm", create_pipeline=custom_pipeline)
 nlp.max_length = 15000000000000000000000000000000
 
@@ -335,7 +334,7 @@ def other_entries(val_ratio = .2):
 
     return input_data, input_data_val
 
-def read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs):
+def read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, track_parallel):
 
     def is_whitespace(c):
         if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
@@ -343,8 +342,10 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
         return False
 
     examples = []
+    if not track_parallel:
+        paragraphs = tqdm(paragraphs)
 
-    for paragraph in tqdm(paragraphs):
+    for paragraph in paragraphs:
 
         paragraph_text = paragraph["context"]
 
@@ -514,6 +515,9 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
                 )
 
                 examples.append(example)
+    if track_parallel:
+        global PARALLEL_TQDM
+        PARALLEL_TQDM.update(len(paragraphs))
     return examples
 
 
@@ -521,17 +525,22 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
     nested_paragraphs = list(chunks(paragraphs, 100))  # Todo: split into nested
     len_nested = len(nested_paragraphs)
 
+    global PARALLEL_TQDM
+    PARALLEL_TQDM = tqdm(total=len(paragraphs))
+
+
     results = Parallel(n_jobs=10)(delayed(read_squad_examples_helper)(
         is_training_,
         version_2_with_negative_,
         dataset_name_,
-        paragraphs_) for is_training_,
+        paragraphs_, True) for is_training_,
                 version_2_with_negative_,
                 dataset_name_,
                 paragraphs_ in
           zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
               [dataset_name] * len_nested, nested_paragraphs))
 
+    PARALLEL_TQDM.close()
     return results
 
 def read_squad_examples(input_file, is_training, version_2_with_negative):
@@ -570,7 +579,7 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
         # Todo: try parallelize
         if dataset_name == 'squad':
             logger.info('Read {} examples'.format(dataset_name))
-            examples += read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs)
+            examples += read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, False)
         else:
             logger.info('Prallel read {} examples'.format(dataset_name))
             examples += read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs)
