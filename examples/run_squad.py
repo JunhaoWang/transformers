@@ -516,7 +516,7 @@ def main():
         torch.distributed.init_process_group(backend='nccl')
         args.n_gpu = 1
     # Todo: change
-    args.device = device # 'cpu'
+    args.device = 'cpu' # device # 'cpu'
 
     # Setup logging
     logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',

@@ -530,7 +530,7 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
                 dataset_name_,
                 paragraphs_ in
           zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
-              [dataset_name] * len_nested, paragraphs))
+              [dataset_name] * len_nested, nested_paragraphs))
 
     return results
 
@@ -569,10 +569,10 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
 
         # Todo: try parallelize
         if dataset_name == 'squad':
-            logger.info('read {} examples'.format(dataset_name))
+            logger.info('Read {} examples'.format(dataset_name))
             examples += read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs)
         else:
-            logger.info('read {} examples'.format(dataset_name))
+            logger.info('Prallel read {} examples'.format(dataset_name))
             examples += read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs)
     if is_training:
         pickle.dump(examples, open('temp/datasets/mixed/train_exampes.pkl', 'wb'))
