@@ -35,6 +35,7 @@ import pickle
 
 from joblib import Parallel, delayed
 
+PARALLEL_TQDM = None
 
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
