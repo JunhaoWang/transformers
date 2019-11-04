@@ -35,6 +35,7 @@ import pickle
 
 from joblib import Parallel, delayed
 
+global PARALLEL_TQDM
 PARALLEL_TQDM = None
 
 def chunks(l, n):
