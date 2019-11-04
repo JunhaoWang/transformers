@@ -348,6 +348,7 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
 
     global PARALLEL_TQDM
     PARALLEL_TQDM = tqdm(total=len(paragraphs))
+    logger.info('PARALLEL_TQDM initialized globally for files -> examples')
 
 
     results = Parallel(n_jobs=10)(delayed(read_squad_examples_helper)(
@@ -368,6 +369,9 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
 def read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, track_parallel):
     if track_parallel:
         global PARALLEL_TQDM
+        if PARALLEL_TQDM is None:
+            logger.info('PARALLEL_TQDM failed to sync globally for files -> examples')
+            PARALLEL_TQDM = tqdm(total=len(paragraphs))
 
     def is_whitespace(c):
         if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
@@ -616,6 +620,7 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
                                  cls_token_segment_id=0, pad_token_segment_id=0,
                                  mask_padding_with_zero=True):
     global PARALLEL_TQDM
+    logger.info('PARALLEL_TQDM initialized globally for examples -> features')
     PARALLEL_TQDM = tqdm(total=len(examples))
 
     nested_examples = list(chunks(examples, 100)) # Todo: split into nested
@@ -656,6 +661,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
 
     if track_parallel:
         global PARALLEL_TQDM
+        if PARALLEL_TQDM is None:
+            logger.info('PARALLEL_TQDM failed to sync globally for examples -> features')
+            PARALLEL_TQDM = tqdm(total=len(examples))
 
     unique_id = unique_id_start
     # cnt_pos, cnt_neg = 0, 0
