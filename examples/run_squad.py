@@ -22,6 +22,7 @@ import logging
 import os
 import random
 import glob
+import pickle
 
 import numpy as np
 import torch
@@ -338,17 +339,17 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         features = torch.load(cached_features_file)
     else:
         logger.info("Creating features from dataset file at %s", input_file)
-        examples = read_squad_examples(input_file=input_file,
-                                                is_training=not evaluate,
-                                                version_2_with_negative=args.version_2_with_negative)
-
+        # examples = read_squad_examples(input_file=input_file,
+        #                                         is_training=not evaluate,
+        #                                         version_2_with_negative=args.version_2_with_negative)
+        examples = pickle.load(open('temp/datasets/mixed/train_examples.pkl', 'rb'))
         print('Finish reading exaples')
 
         # # # Todo remove
         # examples = examples[:1]
 
         # Todo try parallel
-        features = convert_examples_to_features_parallel(examples=examples,
+        features = convert_examples_to_features(examples=examples,
                                                 tokenizer=tokenizer,
                                                 max_seq_length=args.max_seq_length,
                                                 doc_stride=args.doc_stride,
