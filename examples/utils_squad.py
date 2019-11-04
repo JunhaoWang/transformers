@@ -349,7 +349,7 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
     zip_args = list(zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
               [dataset_name] * len_nested, nested_paragraphs))
 
-    results = Parallel(n_jobs=10)(delayed(read_squad_examples_helper)(
+    results = Parallel(n_jobs=50)(delayed(read_squad_examples_helper)(
         is_training_,
         version_2_with_negative_,
         dataset_name_,
@@ -620,7 +620,7 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
             [cls_token_segment_id] * len_nested, [pad_token_segment_id] * len_nested,
             [mask_padding_with_zero] * len_nested, [True] * len_nested, [1000000000 * (i + 1) for i in range(len_nested)]))
 
-    results = Parallel(n_jobs=10)(delayed(convert_examples_to_features)(
+    results = Parallel(n_jobs=50)(delayed(convert_examples_to_features)(
         examples_, tokenizer_, max_seq_length_,
         doc_stride_, max_query_length_, is_training_,
         cls_token_at_end_, cls_token_, sep_token_, pad_token_,
