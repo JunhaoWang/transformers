@@ -455,6 +455,10 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
                 )
 
                 examples.append(example)
+
+                if track_parallel:
+                    global PARALLEL_TQDM
+                    PARALLEL_TQDM.update(1)
         else:
             # Todo: change loading for others
             for qa in paragraph["qas"]:
@@ -523,9 +527,11 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
                 )
 
                 examples.append(example)
-    if track_parallel:
-        global PARALLEL_TQDM
-        PARALLEL_TQDM.update(len(paragraphs))
+
+                if track_parallel:
+                    global PARALLEL_TQDM
+                    PARALLEL_TQDM.update(1)
+
     return examples
 
 
@@ -854,6 +860,11 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                         head_idx=DATASET2HEAD[dataset_type]
                     ))
                 unique_id += 1
+
+                if track_parallel:
+                    global PARALLEL_TQDM
+                    PARALLEL_TQDM.update(1)
+                    
             else:
                 features.append(
                     InputFeatures(
@@ -877,9 +888,11 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                     ))
                 unique_id += 1
 
-    if track_parallel:
-        global PARALLEL_TQDM
-        PARALLEL_TQDM.update(len(examples))
+                if track_parallel:
+                    global PARALLEL_TQDM
+                    PARALLEL_TQDM.update(1)
+
+
     return features
 
 
