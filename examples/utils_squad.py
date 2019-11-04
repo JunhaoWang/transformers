@@ -346,16 +346,15 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
     nested_paragraphs = list(chunks(paragraphs, 100))  # Todo: split into nested
     len_nested = len(nested_paragraphs)
 
-    global PARALLEL_TQDM
     PARALLEL_TQDM = tqdm(total=len(paragraphs))
-    logger.info('PARALLEL_TQDM initialized globally for files -> examples')
+    logger.info('PARALLEL_TQDM initialized for files -> examples')
 
 
     results = Parallel(n_jobs=10)(delayed(read_squad_examples_helper)(
         is_training_,
         version_2_with_negative_,
         dataset_name_,
-        paragraphs_, True) for is_training_,
+        paragraphs_, True, PARALLEL_TQDM) for is_training_,
                 version_2_with_negative_,
                 dataset_name_,
                 paragraphs_ in
@@ -366,12 +365,8 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
     return results
 
 
-def read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, track_parallel):
-    if track_parallel:
-        global PARALLEL_TQDM
-        if PARALLEL_TQDM is None:
-            logger.info('PARALLEL_TQDM failed to sync globally for files -> examples')
-            PARALLEL_TQDM = tqdm(total=len(paragraphs))
+def read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, track_parallel,
+                               PARALLEL_TQDM = None):
 
     def is_whitespace(c):
         if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
@@ -619,8 +614,8 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
                                  sequence_a_segment_id=0, sequence_b_segment_id=1,
                                  cls_token_segment_id=0, pad_token_segment_id=0,
                                  mask_padding_with_zero=True):
-    global PARALLEL_TQDM
-    logger.info('PARALLEL_TQDM initialized globally for examples -> features')
+
+    logger.info('PARALLEL_TQDM initialized for examples -> features')
     PARALLEL_TQDM = tqdm(total=len(examples))
 
     nested_examples = list(chunks(examples, 100)) # Todo: split into nested
@@ -632,7 +627,7 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
         cls_token_at_end_, cls_token_, sep_token_, pad_token_,
         sequence_a_segment_id_, sequence_b_segment_id_,
         cls_token_segment_id_, pad_token_segment_id_,
-        mask_padding_with_zero_, True, ) for examples_, tokenizer_, max_seq_length_,
+        mask_padding_with_zero_, True, PARALLEL_TQDM) for examples_, tokenizer_, max_seq_length_,
             doc_stride_, max_query_length_, is_training_,
             cls_token_at_end_, cls_token_, sep_token_, pad_token_,
             sequence_a_segment_id_, sequence_b_segment_id_,
@@ -656,14 +651,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                                  sequence_a_segment_id=0, sequence_b_segment_id=1,
                                  cls_token_segment_id=0, pad_token_segment_id=0,
                                  mask_padding_with_zero=True, track_parallel = False,
-                                 unique_id_start=1000000000):
+                                 unique_id_start=1000000000, PARALLEL_TQDM=None):
     """Loads a data file into a list of `InputBatch`s."""
 
-    if track_parallel:
-        global PARALLEL_TQDM
-        if PARALLEL_TQDM is None:
-            logger.info('PARALLEL_TQDM failed to sync globally for examples -> features')
-            PARALLEL_TQDM = tqdm(total=len(examples))
 
     unique_id = unique_id_start
     # cnt_pos, cnt_neg = 0, 0
