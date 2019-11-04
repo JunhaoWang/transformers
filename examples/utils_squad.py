@@ -346,6 +346,8 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
     nested_paragraphs = list(chunks(paragraphs, 10))  # Todo: split into nested
     len_nested = len(nested_paragraphs)
 
+    zip_args = list(zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
+              [dataset_name] * len_nested, nested_paragraphs))
 
     results = Parallel(n_jobs=10)(delayed(read_squad_examples_helper)(
         is_training_,
@@ -355,8 +357,7 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
                 version_2_with_negative_,
                 dataset_name_,
                 paragraphs_ in
-          tqdm(zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
-              [dataset_name] * len_nested, nested_paragraphs)))
+          tqdm(zip_args))
 
 
     return results
@@ -611,6 +612,13 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
 
     nested_examples = list(chunks(examples, 10)) # Todo: split into nested
     len_nested = len(nested_examples)
+    zip_args = list(zip(
+        nested_examples, [tokenizer] * len_nested, [max_seq_length] * len_nested,
+            [doc_stride] * len_nested, [max_query_length] * len_nested, [is_training] * len_nested,
+            [cls_token_at_end] * len_nested, [cls_token] * len_nested, [sep_token] * len_nested, [pad_token] * len_nested,
+            [sequence_a_segment_id] * len_nested, [sequence_b_segment_id] * len_nested,
+            [cls_token_segment_id] * len_nested, [pad_token_segment_id] * len_nested,
+            [mask_padding_with_zero] * len_nested, [True] * len_nested, [1000000000 * (i + 1) for i in range(len_nested)]))
 
     results = Parallel(n_jobs=10)(delayed(convert_examples_to_features)(
         examples_, tokenizer_, max_seq_length_,
@@ -623,13 +631,7 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
             cls_token_at_end_, cls_token_, sep_token_, pad_token_,
             sequence_a_segment_id_, sequence_b_segment_id_,
             cls_token_segment_id_, pad_token_segment_id_,
-            mask_padding_with_zero_, track_parallel_, unique_id_start_ in tqdm(zip(
-        nested_examples, [tokenizer] * len_nested, [max_seq_length] * len_nested,
-            [doc_stride] * len_nested, [max_query_length] * len_nested, [is_training] * len_nested,
-            [cls_token_at_end] * len_nested, [cls_token] * len_nested, [sep_token] * len_nested, [pad_token] * len_nested,
-            [sequence_a_segment_id] * len_nested, [sequence_b_segment_id] * len_nested,
-            [cls_token_segment_id] * len_nested, [pad_token_segment_id] * len_nested,
-            [mask_padding_with_zero] * len_nested, [True] * len_nested, [1000000000 * (i + 1) for i in range(len_nested)])))
+            mask_padding_with_zero_, track_parallel_, unique_id_start_ in tqdm(zip_args))
 
 
     return results
