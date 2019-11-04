@@ -343,30 +343,26 @@ def other_entries(val_ratio = .2):
 
 
 def read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs):
-    nested_paragraphs = list(chunks(paragraphs, 100))  # Todo: split into nested
+    nested_paragraphs = list(chunks(paragraphs, 10))  # Todo: split into nested
     len_nested = len(nested_paragraphs)
-
-    PARALLEL_TQDM = tqdm(total=len(paragraphs))
-    logger.info('PARALLEL_TQDM initialized for files -> examples')
 
 
     results = Parallel(n_jobs=10)(delayed(read_squad_examples_helper)(
         is_training_,
         version_2_with_negative_,
         dataset_name_,
-        paragraphs_, True, PARALLEL_TQDM) for is_training_,
+        paragraphs_, True) for is_training_,
                 version_2_with_negative_,
                 dataset_name_,
                 paragraphs_ in
-          zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
-              [dataset_name] * len_nested, nested_paragraphs))
+          tqdm(zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
+              [dataset_name] * len_nested, nested_paragraphs)))
 
-    PARALLEL_TQDM.close()
+
     return results
 
 
-def read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, track_parallel,
-                               PARALLEL_TQDM = None):
+def read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, track_parallel):
 
     def is_whitespace(c):
         if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
@@ -480,8 +476,6 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
 
                 examples.append(example)
 
-                if track_parallel:
-                    PARALLEL_TQDM.update(1)
         else:
             # Todo: change loading for others
             for qa in paragraph["qas"]:
@@ -551,8 +545,6 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
 
                 examples.append(example)
 
-                if track_parallel:
-                    PARALLEL_TQDM.update(1)
 
     return examples
 
@@ -615,10 +607,9 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
                                  cls_token_segment_id=0, pad_token_segment_id=0,
                                  mask_padding_with_zero=True):
 
-    logger.info('PARALLEL_TQDM initialized for examples -> features')
-    PARALLEL_TQDM = tqdm(total=len(examples))
 
-    nested_examples = list(chunks(examples, 100)) # Todo: split into nested
+
+    nested_examples = list(chunks(examples, 10)) # Todo: split into nested
     len_nested = len(nested_examples)
 
     results = Parallel(n_jobs=10)(delayed(convert_examples_to_features)(
@@ -627,20 +618,20 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
         cls_token_at_end_, cls_token_, sep_token_, pad_token_,
         sequence_a_segment_id_, sequence_b_segment_id_,
         cls_token_segment_id_, pad_token_segment_id_,
-        mask_padding_with_zero_, True, PARALLEL_TQDM) for examples_, tokenizer_, max_seq_length_,
+        mask_padding_with_zero_, track_parallel_, unique_id_start_) for examples_, tokenizer_, max_seq_length_,
             doc_stride_, max_query_length_, is_training_,
             cls_token_at_end_, cls_token_, sep_token_, pad_token_,
             sequence_a_segment_id_, sequence_b_segment_id_,
             cls_token_segment_id_, pad_token_segment_id_,
-            mask_padding_with_zero_, track_parallel_, unique_id_start_ in zip(
+            mask_padding_with_zero_, track_parallel_, unique_id_start_ in tqdm(zip(
         nested_examples, [tokenizer] * len_nested, [max_seq_length] * len_nested,
             [doc_stride] * len_nested, [max_query_length] * len_nested, [is_training] * len_nested,
             [cls_token_at_end] * len_nested, [cls_token] * len_nested, [sep_token] * len_nested, [pad_token] * len_nested,
             [sequence_a_segment_id] * len_nested, [sequence_b_segment_id] * len_nested,
             [cls_token_segment_id] * len_nested, [pad_token_segment_id] * len_nested,
-            [mask_padding_with_zero] * len_nested, [True] * len_nested, [1000000000 * (i + 1) for i in range(len_nested)]))
+            [mask_padding_with_zero] * len_nested, [True] * len_nested, [1000000000 * (i + 1) for i in range(len_nested)])))
 
-    PARALLEL_TQDM.close()
+
     return results
 
 
@@ -651,7 +642,7 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                                  sequence_a_segment_id=0, sequence_b_segment_id=1,
                                  cls_token_segment_id=0, pad_token_segment_id=0,
                                  mask_padding_with_zero=True, track_parallel = False,
-                                 unique_id_start=1000000000, PARALLEL_TQDM=None):
+                                 unique_id_start=1000000000):
     """Loads a data file into a list of `InputBatch`s."""
 
 
@@ -865,8 +856,6 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                     ))
                 unique_id += 1
 
-                if track_parallel:
-                    PARALLEL_TQDM.update(1)
 
             else:
                 features.append(
@@ -891,8 +880,6 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                     ))
                 unique_id += 1
 
-                if track_parallel:
-                    PARALLEL_TQDM.update(1)
 
 
     return features
