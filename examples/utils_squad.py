@@ -342,6 +342,30 @@ def other_entries(val_ratio = .2):
 
     return input_data, input_data_val
 
+
+def read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs):
+    nested_paragraphs = list(chunks(paragraphs, 100))  # Todo: split into nested
+    len_nested = len(nested_paragraphs)
+
+    global PARALLEL_TQDM
+    PARALLEL_TQDM = tqdm(total=len(paragraphs))
+
+
+    results = Parallel(n_jobs=10)(delayed(read_squad_examples_helper)(
+        is_training_,
+        version_2_with_negative_,
+        dataset_name_,
+        paragraphs_, True) for is_training_,
+                version_2_with_negative_,
+                dataset_name_,
+                paragraphs_ in
+          zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
+              [dataset_name] * len_nested, nested_paragraphs))
+
+    PARALLEL_TQDM.close()
+    return results
+
+
 def read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, track_parallel):
 
     def is_whitespace(c):
@@ -535,27 +559,7 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
     return examples
 
 
-def read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs):
-    nested_paragraphs = list(chunks(paragraphs, 100))  # Todo: split into nested
-    len_nested = len(nested_paragraphs)
 
-    global PARALLEL_TQDM
-    PARALLEL_TQDM = tqdm(total=len(paragraphs))
-
-
-    results = Parallel(n_jobs=10)(delayed(read_squad_examples_helper)(
-        is_training_,
-        version_2_with_negative_,
-        dataset_name_,
-        paragraphs_, True) for is_training_,
-                version_2_with_negative_,
-                dataset_name_,
-                paragraphs_ in
-          zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
-              [dataset_name] * len_nested, nested_paragraphs))
-
-    PARALLEL_TQDM.close()
-    return results
 
 def read_squad_examples(input_file, is_training, version_2_with_negative):
     """Read a SQuAD json file into a list of SquadExample."""
@@ -864,7 +868,7 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                 if track_parallel:
                     global PARALLEL_TQDM
                     PARALLEL_TQDM.update(1)
-                    
+
             else:
                 features.append(
                     InputFeatures(
