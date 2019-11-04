@@ -633,7 +633,7 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
             cls_token_segment_id_, pad_token_segment_id_,
             mask_padding_with_zero_, track_parallel_, unique_id_start_ in tqdm(zip_args))
 
-
+    results = list(flatten(results))
     return results
 
 
