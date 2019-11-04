@@ -339,6 +339,9 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         features = torch.load(cached_features_file)
     else:
         logger.info("Creating features from dataset file at %s", input_file)
+
+        # Todo change below to be automatic
+
         # examples = read_squad_examples(input_file=input_file,
         #                                         is_training=not evaluate,
         #                                         version_2_with_negative=args.version_2_with_negative)
@@ -349,7 +352,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         # examples = examples[:1]
 
         # Todo try parallel
-        features = convert_examples_to_features(examples=examples,
+        features = convert_examples_to_features_parallel(examples=examples,
                                                 tokenizer=tokenizer,
                                                 max_seq_length=args.max_seq_length,
                                                 doc_stride=args.doc_stride,
