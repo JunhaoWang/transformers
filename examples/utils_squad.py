@@ -606,7 +606,8 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
                                  sequence_a_segment_id=0, sequence_b_segment_id=1,
                                  cls_token_segment_id=0, pad_token_segment_id=0,
                                  mask_padding_with_zero=True):
-
+    global PARALLEL_TQDM
+    PARALLEL_TQDM = tqdm(total=len(examples))
 
     nested_examples = list(chunks(examples, 100)) # Todo: split into nested
     len_nested = len(nested_examples)
@@ -617,18 +618,20 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
         cls_token_at_end_, cls_token_, sep_token_, pad_token_,
         sequence_a_segment_id_, sequence_b_segment_id_,
         cls_token_segment_id_, pad_token_segment_id_,
-        mask_padding_with_zero_) for examples_, tokenizer_, max_seq_length_,
+        mask_padding_with_zero_, True, ) for examples_, tokenizer_, max_seq_length_,
             doc_stride_, max_query_length_, is_training_,
             cls_token_at_end_, cls_token_, sep_token_, pad_token_,
             sequence_a_segment_id_, sequence_b_segment_id_,
             cls_token_segment_id_, pad_token_segment_id_,
-            mask_padding_with_zero_ in zip(nested_examples, [tokenizer] * len_nested, [max_seq_length] * len_nested,
+            mask_padding_with_zero_, track_parallel_, unique_id_start_ in zip(
+        nested_examples, [tokenizer] * len_nested, [max_seq_length] * len_nested,
             [doc_stride] * len_nested, [max_query_length] * len_nested, [is_training] * len_nested,
             [cls_token_at_end] * len_nested, [cls_token] * len_nested, [sep_token] * len_nested, [pad_token] * len_nested,
             [sequence_a_segment_id] * len_nested, [sequence_b_segment_id] * len_nested,
             [cls_token_segment_id] * len_nested, [pad_token_segment_id] * len_nested,
-            [mask_padding_with_zero] * len_nested))
+            [mask_padding_with_zero] * len_nested, [True] * len_nested, [1000000000 * (i + 1) for i in range(len_nested)]))
 
+    PARALLEL_TQDM.close()
     return results
 
 
@@ -638,10 +641,11 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                                  cls_token='[CLS]', sep_token='[SEP]', pad_token=0,
                                  sequence_a_segment_id=0, sequence_b_segment_id=1,
                                  cls_token_segment_id=0, pad_token_segment_id=0,
-                                 mask_padding_with_zero=True):
+                                 mask_padding_with_zero=True, track_parallel = False,
+                                 unique_id_start=1000000000):
     """Loads a data file into a list of `InputBatch`s."""
 
-    unique_id = 1000000000
+    unique_id = unique_id_start
     # cnt_pos, cnt_neg = 0, 0
     # max_N, max_M = 1024, 1024
     # f = np.zeros((max_N, max_M), dtype=np.float32)
@@ -649,7 +653,10 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
     features = []
     example_index = -1
 
-    for example in tqdm(examples):
+    if not track_parallel:
+        examples = tqdm(examples)
+
+    for example in examples:
         example_index += 1
 
         # if example_index % 100 == 0:
@@ -870,6 +877,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                     ))
                 unique_id += 1
 
+    if track_parallel:
+        global PARALLEL_TQDM
+        PARALLEL_TQDM.update(len(examples))
     return features
 
 
