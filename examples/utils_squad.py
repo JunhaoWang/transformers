@@ -35,7 +35,6 @@ import pickle
 
 from joblib import Parallel, delayed
 
-global PARALLEL_TQDM
 PARALLEL_TQDM = None
 
 def chunks(l, n):
@@ -369,6 +368,8 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
 
 
 def read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, track_parallel):
+    if track_parallel:
+        global PARALLEL_TQDM
 
     def is_whitespace(c):
         if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
@@ -483,7 +484,6 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
                 examples.append(example)
 
                 if track_parallel:
-                    global PARALLEL_TQDM
                     PARALLEL_TQDM.update(1)
         else:
             # Todo: change loading for others
@@ -555,7 +555,6 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
                 examples.append(example)
 
                 if track_parallel:
-                    global PARALLEL_TQDM
                     PARALLEL_TQDM.update(1)
 
     return examples
@@ -656,6 +655,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                                  mask_padding_with_zero=True, track_parallel = False,
                                  unique_id_start=1000000000):
     """Loads a data file into a list of `InputBatch`s."""
+
+    if track_parallel:
+        global PARALLEL_TQDM
 
     unique_id = unique_id_start
     # cnt_pos, cnt_neg = 0, 0
@@ -868,7 +870,6 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                 unique_id += 1
 
                 if track_parallel:
-                    global PARALLEL_TQDM
                     PARALLEL_TQDM.update(1)
 
             else:
@@ -895,7 +896,6 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                 unique_id += 1
 
                 if track_parallel:
-                    global PARALLEL_TQDM
                     PARALLEL_TQDM.update(1)
 
 
