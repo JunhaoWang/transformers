@@ -41,6 +41,14 @@ def chunks(l, n):
     for i in range(0, len(l), n):
         yield l[i:i + n]
 
+def flatten(container):
+    for i in container:
+        if isinstance(i, (list,tuple)):
+            for j in flatten(i):
+                yield j
+        else:
+            yield i
+
 def custom_pipeline(nlp):
     return (nlp.tagger, )
     # for token in nlp[:-1]:
@@ -579,10 +587,12 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
         # Todo: try parallelize
         if dataset_name == 'squad':
             logger.info('Read {} examples'.format(dataset_name))
-            examples += read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, False)
+            results = read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, False)
+            examples += list(flatten(results))
         else:
             logger.info('Prallel read {} examples'.format(dataset_name))
-            examples += read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs)
+            results = read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs)
+            examples += list(flatten(results))
     if is_training:
         pickle.dump(examples, open('temp/datasets/mixed/train_exampes.pkl', 'wb'))
     else:
