@@ -38,17 +38,19 @@ except:
 from tqdm import tqdm, trange
 
 from transformers import (WEIGHTS_NAME, BertConfig,
-                                  BertForQuestionAnswering, BertTokenizer,
+                                  BertForQuestionAnswering, BertTokenizer, BertForQuestionAnsweringGeneralized,
                                   XLMConfig, XLMForQuestionAnswering,
                                   XLMTokenizer, XLNetConfig,
                                   XLNetForQuestionAnswering, XLNetForQuestionAnsweringGeneralized,
                                   XLNetTokenizer,
-                                  DistilBertConfig, DistilBertForQuestionAnswering, DistilBertTokenizer)
+                                  DistilBertConfig, DistilBertForQuestionAnswering,
+                          DistilBertForQuestionAnsweringGeneralized,
+                          DistilBertTokenizer)
 
 from transformers import AdamW, WarmupLinearSchedule
 
 from utils_squad import (read_squad_examples, convert_examples_to_features, convert_examples_to_features_parallel,
-                         RawResult, write_predictions, RawResultExtendedGeneral,
+                         RawResult, write_predictions, RawResultExtendedGeneral, RawResultGeneral, write_predictions_general,
                          RawResultExtended, write_predictions_extended, write_predictions_extended_general)
 
 # The follwing import is the official SQuAD evaluation script (2.0).
@@ -63,10 +65,13 @@ ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) \
 
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForQuestionAnswering, BertTokenizer),
+    'bertgeneral': (BertConfig, BertForQuestionAnsweringGeneralized, BertTokenizer),
     'xlnet': (XLNetConfig, XLNetForQuestionAnswering, XLNetTokenizer),
     # Todo change
     'xlnetgeneral': (XLNetConfig, XLNetForQuestionAnsweringGeneralized, XLNetTokenizer),
     'xlm': (XLMConfig, XLMForQuestionAnswering, XLMTokenizer),
+    'distilbertgeneral': (DistilBertConfig, DistilBertForQuestionAnsweringGeneralized, DistilBertTokenizer),
+    # Todo change
     'distilbert': (DistilBertConfig, DistilBertForQuestionAnswering, DistilBertTokenizer)
 }
 
@@ -146,8 +151,9 @@ def train(args, train_dataset, model, tokenizer):
                       'start_positions': batch[3],
                       'end_positions':   batch[4],
                       }
-            if args.model_type != 'distilbert':
+            if args.model_type not in ['distilbert', 'distilbertgeneral']:
                 inputs['token_type_ids'] = None if args.model_type == 'xlm' else batch[2]
+
             if args.model_type in ['xlnet', 'xlm', 'xlnetgeneral']:
                 inputs.update({'cls_index': batch[5],
                                'p_mask':       batch[6],
@@ -157,6 +163,11 @@ def train(args, train_dataset, model, tokenizer):
                 inputs.update({'cls_index': batch[5],
                                'p_mask':       batch[6],
                                'span_loss': batch[-1],
+                               'head_idx': batch[-3],
+                               'is_impossible': batch[-2],
+                               })
+            if args.model_type in ['distilbertgeneral', 'bertgeneral']:
+                inputs.update({'span_loss': batch[-1],
                                'head_idx': batch[-3],
                                'is_impossible': batch[-2],
                                })
@@ -242,8 +253,10 @@ def evaluate(args, model, tokenizer, prefix=""):
             inputs = {'input_ids':      batch[0],
                       'attention_mask': batch[1]
                       }
-            if args.model_type != 'distilbert':
+            if args.model_type not in ['distilbert', 'distilbertgeneral']:
                 inputs['token_type_ids'] = None if args.model_type == 'xlm' else batch[2]  # XLM don't use segment_ids
+            if args.model_type == 'distilbertgeneral':
+                inputs['cls_index'] = batch[5]
             example_indices = batch[3]
             if args.model_type in ['xlnet', 'xlm', 'xlnetgeneral']:
                 inputs.update({'cls_index': batch[4],
@@ -254,6 +267,11 @@ def evaluate(args, model, tokenizer, prefix=""):
                 inputs.update({'cls_index': batch[4],
                                'p_mask':    batch[5],
                                'is_impossible': batch[-2],
+                               'span_loss':    batch[-1],
+                               'head_idx': batch[-3],
+                               })
+            if args.model_type in ['distilbertgeneral', 'bertgeneral']:
+                inputs.update({'is_impossible': batch[-2],
                                'span_loss':    batch[-1],
                                'head_idx': batch[-3],
                                })
@@ -280,6 +298,13 @@ def evaluate(args, model, tokenizer, prefix=""):
                                            cls_logits           = to_list(outputs[4][i]),
                                            cls_logits_full      = to_list(outputs[5][i])
                                            )
+            elif args.model_type in ['bertgeneral']:
+                result = RawResultGeneral(unique_id=unique_id,
+                                   start_logits=to_list(outputs[0][i]),
+                                   end_logits=to_list(outputs[1][i]),
+                                   cls_class=to_list(outputs[2][i]),
+                                   att_logits=to_list(outputs[3][i])
+                                   )
             else:
                 result = RawResult(unique_id    = unique_id,
                                    start_logits = to_list(outputs[0][i]),
@@ -309,7 +334,11 @@ def evaluate(args, model, tokenizer, prefix=""):
                         output_nbest_file, output_null_log_odds_file, args.predict_file,
                         model.config.start_n_top, model.config.end_n_top,
                         args.version_2_with_negative, tokenizer, args.verbose_logging)
-
+    elif args.model_type in ['bertgeneral']:
+        write_predictions_general(examples, features, all_results, args.n_best_size,
+                        args.max_answer_length, args.do_lower_case, output_prediction_file,
+                        output_nbest_file, output_null_log_odds_file, args.verbose_logging,
+                        args.version_2_with_negative, args.null_score_diff_threshold)
     else:
         write_predictions(examples, features, all_results, args.n_best_size,
                         args.max_answer_length, args.do_lower_case, output_prediction_file,
@@ -342,14 +371,15 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
 
         # Todo change below to be automatic
 
-        # examples = read_squad_examples(input_file=input_file,
-        #                                         is_training=not evaluate,
-        #                                         version_2_with_negative=args.version_2_with_negative)
-        examples = pickle.load(open('temp/datasets/mixed/train_examples.pkl', 'rb'))
+        examples = read_squad_examples(input_file=input_file,
+                                                is_training=not evaluate,
+                                                version_2_with_negative=args.version_2_with_negative)
+        # examples = pickle.load(open('temp/datasets/mixed/train_examples.pkl', 'rb'))
         print('Finish reading exaples')
 
         # # # Todo remove
-        # examples = examples[:1]
+        if not evaluate:
+            examples = examples[:4]
 
         # Todo try parallel
         features = convert_examples_to_features_parallel(examples=examples,
@@ -358,11 +388,11 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                                                 doc_stride=args.doc_stride,
                                                 max_query_length=args.max_query_length,
                                                 is_training=not evaluate)
-
-        print('Finish converting examples to features')
-        if args.local_rank in [-1, 0]:
-            logger.info("Saving features into cached file %s", cached_features_file)
-            torch.save(features, cached_features_file)
+        # Todo: remove
+        # print('Finish converting examples to features')
+        # if args.local_rank in [-1, 0]:
+        #     logger.info("Saving features into cached file %s", cached_features_file)
+        #     torch.save(features, cached_features_file)
 
     if args.local_rank == 0 and not evaluate:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
@@ -426,7 +456,7 @@ def main():
     parser.add_argument('--null_score_diff_threshold', type=float, default=0.0,
                         help="If null_score - best_non_null is greater than the threshold predict null.")
     # Todo 384
-    parser.add_argument("--max_seq_length", default=384, type=int,
+    parser.add_argument("--max_seq_length", default=100, type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. Sequences "
                              "longer than this will be truncated, and sequences shorter than this will be padded.")
     parser.add_argument("--doc_stride", default=128, type=int,
@@ -443,9 +473,9 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
     # Todo 4
-    parser.add_argument("--per_gpu_train_batch_size", default=4, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=2, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=4, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=2, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")
@@ -541,7 +571,7 @@ def main():
 
     config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path)
 
-    if args.model_type in ['xlnetgeneral']:
+    if args.model_type in ['xlnetgeneral', 'bertgeneral', 'distilbertgeneral']:
         from utils_squad import DATASET2HEAD, DATASET2HEADSIZE
         from collections import defaultdict
         HEAD2DATASET = defaultdict(list)

@@ -1151,3 +1151,181 @@ class BertForQuestionAnswering(BertPreTrainedModel):
             outputs = (total_loss,) + outputs
 
         return outputs  # (loss), start_logits, end_logits, (hidden_states), (attentions)
+
+
+@add_start_docstrings("""Bert Model with a span classification head on top for extractive question-answering tasks like SQuAD (a linear layers on top of
+    the hidden-states output to compute `span start logits` and `span end logits`). """,
+    BERT_START_DOCSTRING, BERT_INPUTS_DOCSTRING)
+class BertForQuestionAnsweringGeneralized(BertPreTrainedModel):
+    r"""
+        **start_positions**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size,)``:
+            Labels for position (index) of the start of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`).
+            Position outside of the sequence are not taken into account for computing the loss.
+        **end_positions**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size,)``:
+            Labels for position (index) of the end of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`).
+            Position outside of the sequence are not taken into account for computing the loss.
+
+    Outputs: `Tuple` comprising various elements depending on the configuration (config) and inputs:
+        **loss**: (`optional`, returned when ``labels`` is provided) ``torch.FloatTensor`` of shape ``(1,)``:
+            Total span extraction loss is the sum of a Cross-Entropy for the start and end positions.
+        **start_scores**: ``torch.FloatTensor`` of shape ``(batch_size, sequence_length,)``
+            Span-start scores (before SoftMax).
+        **end_scores**: ``torch.FloatTensor`` of shape ``(batch_size, sequence_length,)``
+            Span-end scores (before SoftMax).
+        **hidden_states**: (`optional`, returned when ``config.output_hidden_states=True``)
+            list of ``torch.FloatTensor`` (one for the output of each layer + the output of the embeddings)
+            of shape ``(batch_size, sequence_length, hidden_size)``:
+            Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+        **attentions**: (`optional`, returned when ``config.output_attentions=True``)
+            list of ``torch.FloatTensor`` (one for each layer) of shape ``(batch_size, num_heads, sequence_length, sequence_length)``:
+            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention heads.
+
+    Examples::
+
+        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        model = BertForQuestionAnswering.from_pretrained('bert-large-uncased-whole-word-masking-finetuned-squad')
+        question, text = "Who was Jim Henson?", "Jim Henson was a nice puppet"
+        input_text = "[CLS] " + question + " [SEP] " + text + " [SEP]"
+        input_ids = tokenizer.encode(input_text)
+        token_type_ids = [0 if i <= input_ids.index(102) else 1 for i in range(len(input_ids))]
+        start_scores, end_scores = model(torch.tensor([input_ids]), token_type_ids=torch.tensor([token_type_ids]))
+        all_tokens = tokenizer.convert_ids_to_tokens(input_ids)
+        print(' '.join(all_tokens[torch.argmax(start_scores) : torch.argmax(end_scores)+1]))
+        # a nice puppet
+
+
+    """
+    def __init__(self, config):
+        super(BertForQuestionAnsweringGeneralized, self).__init__(config)
+        self.num_labels = config.num_labels
+
+        self.bert = BertModel(config)
+        self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
+        self.att_outputs = nn.Linear(config.hidden_size, 1)
+
+        self.cls_head_sizes = config.cls_head_sizes
+        self.answer_classes = torch.nn.ModuleList(
+            [nn.Linear(config.hidden_size * 2, k, bias=False) for k in self.cls_head_sizes]
+        )
+
+        self.init_weights()
+
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
+                start_positions=None, end_positions=None, head_idx=None, span_loss=None, is_impossible=None):
+
+        outputs = self.bert(input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids,
+                            head_mask=head_mask)
+
+        sequence_output = outputs[0]
+        pooled_output = outputs[1]
+
+        logits = self.qa_outputs(sequence_output)
+        start_logits, end_logits = logits.split(1, dim=-1)
+        start_logits = start_logits.squeeze(-1)
+        end_logits = end_logits.squeeze(-1)
+
+        att_logits = self.att_outputs(sequence_output)
+        att_logits_sigmoid = torch.sigmoid(att_logits).squeeze(-1)
+
+        att_states_inferred_all = torch.einsum("blh,bl->bh", sequence_output, att_logits_sigmoid)
+        qa_states_inferred_all = torch.cat((pooled_output, att_states_inferred_all), 1)
+
+        cls_classes_all = torch.ones_like(head_idx).long()
+
+        for i in range(len(self.cls_head_sizes)):
+            head_loss_idx = (head_idx == i).nonzero().T
+            if len(head_loss_idx.squeeze(0)) > 0:
+                qa_states_inferred_all_ = qa_states_inferred_all[head_loss_idx].squeeze(0)
+                cls_logits = self.answer_classes[i](qa_states_inferred_all_)
+                cls_classes_all[head_loss_idx.squeeze(0)] = torch.argmax(cls_logits, dim=1)
+
+        outputs = (start_logits, end_logits, cls_classes_all, att_logits) + outputs[2:]
+
+        if start_positions is not None and end_positions is not None:
+            total_loss = 0
+
+            if len(start_positions.size()) > 1:
+                start_positions = start_positions.squeeze(-1)
+            if len(end_positions.size()) > 1:
+                end_positions = end_positions.squeeze(-1)
+            # sometimes the start/end positions are outside our model inputs, we ignore these terms
+            ignored_index = start_logits.size(1)
+            start_positions.clamp_(0, ignored_index)
+            end_positions.clamp_(0, ignored_index)
+
+            span_loss_idx = span_loss.nonzero().T
+
+            # span loss
+            if len(span_loss_idx.squeeze(0)) > 0:
+                start_positions_ = start_positions[span_loss_idx].squeeze(0)
+                end_positions_ = end_positions[span_loss_idx].squeeze(0)
+                start_logits_ = start_logits[span_loss_idx].squeeze(0)
+                end_logits_ = end_logits[span_loss_idx].squeeze(0)
+                att_logits_sigmoid_ = att_logits_sigmoid[span_loss_idx].squeeze(0)
+
+                # If we are on multi-GPU, split add a dimension
+                span_loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
+                start_loss = span_loss_fct(start_logits_, start_positions_)
+                end_loss = span_loss_fct(end_logits_, end_positions_)
+                total_loss += (start_loss + end_loss) / 2
+
+                # att loss
+                att_loss_fct = nn.BCELoss()
+                bch_size = start_logits_.shape[0]
+                true_range_ = torch.cat(
+                    [torch.cat((torch.zeros(start_positions_[i]), torch.ones(1 + end_positions_[i] - start_positions_[i]),
+                                torch.zeros(ignored_index - 1 - end_positions_[i]))).reshape(1, -1) for i in range(bch_size)]
+                ).to(att_logits_sigmoid_.device)
+                att_loss = att_loss_fct(att_logits_sigmoid_, true_range_)
+
+                total_loss += att_loss
+
+            # cls loss
+            if is_impossible is not None:
+                for i in range(len(self.cls_head_sizes)):
+                    head_loss_idx = (head_idx == i).nonzero().T
+                    if len(head_loss_idx.squeeze(0)) > 0:
+
+                        span_loss_head_loss_mean = span_loss[head_loss_idx].squeeze(0).float().mean()
+                        sequence_output_ = sequence_output[head_loss_idx].squeeze(0)
+                        start_positions_ = start_positions[head_loss_idx].squeeze(0)
+                        end_positions_ = end_positions[head_loss_idx].squeeze(0)
+                        start_logits_ = start_logits[head_loss_idx].squeeze(0)
+                        att_logits_sigmoid_ = att_logits_sigmoid[head_loss_idx].squeeze(0)
+                        pooled_output_ = pooled_output[head_loss_idx].squeeze(0)
+
+                        is_impossible_ = is_impossible[head_loss_idx].squeeze(0)
+
+                        cls_loss_fct = nn.CrossEntropyLoss()
+
+                        if span_loss_head_loss_mean == 1:
+
+                            bch_size = start_logits_.shape[0]
+                            true_range_ = torch.cat(
+                                [torch.cat((torch.zeros(start_positions_[i]),
+                                            torch.ones(1 + end_positions_[i] - start_positions_[i]),
+                                            torch.zeros(ignored_index - 1 - end_positions_[i]))).reshape(1, -1) for i in
+                                 range(bch_size)]
+                            ).to(sequence_output_.device)
+                            att_states_true = torch.einsum("blh,bl->bh", sequence_output_, true_range_)
+                            qa_states_true = torch.cat((pooled_output_, att_states_true), 1)
+                            cls_logits = self.answer_classes[i](qa_states_true)
+                            cls_loss = cls_loss_fct(cls_logits, is_impossible_)
+                            total_loss += cls_loss
+
+                        elif span_loss_head_loss_mean == 0:
+                            att_states_inferred = torch.einsum("blh,bl->bh", sequence_output_, att_logits_sigmoid_)
+                            qa_states_inferred = torch.cat((pooled_output_, att_states_inferred), 1)
+                            cls_logits = self.answer_classes[i](qa_states_inferred)
+                            cls_loss = cls_loss_fct(cls_logits, is_impossible_)
+                            total_loss += cls_loss
+                        else:
+                            raise Exception('wrong span loss index')
+
+            outputs = (total_loss,) + outputs
+        return outputs  # (loss), start_logits, end_logits, (hidden_states), (attentions)

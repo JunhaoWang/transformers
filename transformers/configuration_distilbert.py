@@ -49,6 +49,7 @@ class DistilBertConfig(PretrainedConfig):
                  tie_weights_=True,
                  qa_dropout=0.1,
                  seq_classif_dropout=0.2,
+                 cls_head_sizes=[2],
                  **kwargs):
         super(DistilBertConfig, self).__init__(**kwargs)
 
@@ -73,6 +74,7 @@ class DistilBertConfig(PretrainedConfig):
             self.tie_weights_ = tie_weights_
             self.qa_dropout = qa_dropout
             self.seq_classif_dropout = seq_classif_dropout
+            self.cls_head_sizes = cls_head_sizes
         else:
             raise ValueError("First argument must be either a vocabulary size (int)"
                              " or the path to a pretrained model config file (str)")
@@ -87,3 +89,4 @@ class DistilBertConfig(PretrainedConfig):
     @property
     def num_hidden_layers(self):
         return self.n_layers
+
