@@ -456,7 +456,7 @@ def main():
     parser.add_argument('--null_score_diff_threshold', type=float, default=0.0,
                         help="If null_score - best_non_null is greater than the threshold predict null.")
     # Todo 384
-    parser.add_argument("--max_seq_length", default=100, type=int,
+    parser.add_argument("--max_seq_length", default=384, type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. Sequences "
                              "longer than this will be truncated, and sequences shorter than this will be padded.")
     parser.add_argument("--doc_stride", default=128, type=int,
@@ -473,9 +473,9 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
     # Todo 4
-    parser.add_argument("--per_gpu_train_batch_size", default=2, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=4, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=2, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=4, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")
