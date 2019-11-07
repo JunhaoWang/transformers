@@ -552,8 +552,6 @@ def main():
     # Todo: change
     args.device = device # 'cpu'
 
-    print('Using {}'.format(device))
-
     # Setup logging
     logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt = '%m/%d/%Y %H:%M:%S',
