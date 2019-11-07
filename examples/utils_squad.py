@@ -340,8 +340,8 @@ def other_entries(val_ratio = .2):
     pickle.dump(input_data_val, open('temp/datasets/mixed/val_entries.pkl', 'wb'))
 
     #Todo: remove
-    return [], []
-    # return input_data, input_data_val
+    # return [], []
+    return input_data, input_data_val
 
 
 def read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs):
@@ -565,8 +565,8 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
         return False
 
     # # # Todo: remove
-    if is_training:
-        input_data = input_data[:4]
+    # if is_training:
+    #     input_data = input_data[:4]
 
     # Todo: hack other data in
     other_entries_train, other_entries_val = other_entries()

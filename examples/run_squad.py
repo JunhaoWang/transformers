@@ -389,10 +389,10 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                                                 max_query_length=args.max_query_length,
                                                 is_training=not evaluate)
         # Todo: remove
-        # print('Finish converting examples to features')
-        # if args.local_rank in [-1, 0]:
-        #     logger.info("Saving features into cached file %s", cached_features_file)
-        #     torch.save(features, cached_features_file)
+        print('Finish converting examples to features')
+        if args.local_rank in [-1, 0]:
+            logger.info("Saving features into cached file %s", cached_features_file)
+            torch.save(features, cached_features_file)
 
     if args.local_rank == 0 and not evaluate:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
