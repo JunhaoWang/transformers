@@ -1277,6 +1277,9 @@ class BertForQuestionAnsweringGeneralized(BertPreTrainedModel):
                 # att loss
                 att_loss_fct = nn.BCELoss()
                 bch_size = start_logits_.shape[0]
+
+                print(start_positions_, end_positions_, ignored_index)
+                
                 true_range_ = torch.cat(
                     [torch.cat((torch.zeros(start_positions_[i]), torch.ones(1 + end_positions_[i] - start_positions_[i]),
                                 torch.zeros(ignored_index - 1 - end_positions_[i]))).reshape(1, -1) for i in range(bch_size)]
