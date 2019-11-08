@@ -90,6 +90,7 @@ def train(args, train_dataset, model, tokenizer):
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter()
 
+    print('Start to train {} dataset'.format(len(train_dataset)))
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
@@ -363,6 +364,9 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         'dev' if evaluate else 'train',
         list(filter(None, args.model_name_or_path.split('/'))).pop(),
         str(args.max_seq_length)))
+    # print(cached_features_file, args.overwrite_cache)
+    # assert os.path.exists(cached_features_file)
+    
     if os.path.exists(cached_features_file) and not args.overwrite_cache and not output_examples:
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
@@ -375,11 +379,11 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                                                 is_training=not evaluate,
                                                 version_2_with_negative=args.version_2_with_negative)
         # examples = pickle.load(open('temp/datasets/mixed/train_examples.pkl', 'rb'))
-        print('Finish reading exaples')
-
+        print('Finish reading {} examples'.format(len(examples)))
+        
         # # # Todo remove
-        if not evaluate:
-            examples = examples[:4]
+        # if not evaluate:
+        #     examples = examples[:4]
 
         # Todo try parallel
         features = convert_examples_to_features_parallel(examples=examples,
@@ -389,7 +393,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                                                 max_query_length=args.max_query_length,
                                                 is_training=not evaluate)
         # Todo: remove
-        print('Finish converting examples to features')
+        print('Finish converting {} examples to {} features'.format(len(examples), len(features)))
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
             torch.save(features, cached_features_file)
@@ -473,13 +477,13 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
     # Todo 4
-    parser.add_argument("--per_gpu_train_batch_size", default=4, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=3, type=int,
                         help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=4, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=3, type=int,
                         help="Batch size per GPU/CPU for evaluation.")
     parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=4,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
     parser.add_argument("--weight_decay", default=0.0, type=float,
                         help="Weight deay if we apply some.")
@@ -503,9 +507,9 @@ def main():
                         help="If true, all of the warnings related to data processing will be printed. "
                              "A number of warnings are expected for a normal SQuAD evaluation.")
 
-    parser.add_argument('--logging_steps', type=int, default=50,
+    parser.add_argument('--logging_steps', type=int, default=500,
                         help="Log every X updates steps.")
-    parser.add_argument('--save_steps', type=int, default=50,
+    parser.add_argument('--save_steps', type=int, default=500,
                         help="Save checkpoint every X updates steps.")
     parser.add_argument("--eval_all_checkpoints", action='store_true',
                         help="Evaluate all checkpoints starting with the same prefix as model_name ending and ending with step number")
