@@ -67,21 +67,21 @@ logger = logging.getLogger(__name__)
 
 DATASET2HEAD = {
     'squad': 0,
-    'fever': 1,
-    'fnc': 2,
-    'leaders': 3
+    # 'fever': 1,
+    'fnc': 1,
+    'leaders': 2
 }
 
 DATASET2HEADSIZE = {
-    'squad': 2,
-    'fever': 3,
-    'fnc': 4,
-    'leaders': 3
+    'squad': 0,
+    # 'fever': 3,
+    'fnc': 1,
+    'leaders': 2
 }
 
 DATASET2SPANLOSS = {
     'squad': True,
-    'fever': True,
+    # 'fever': True,
     'fnc': False,
     'leaders': False
 }
@@ -94,7 +94,7 @@ DATASET2SPANLOSS = {
 # }
 
 DATASET2IMPOSIBBLE_ = {
-    'fever': {0: False, 1: False, 2: True},
+    # 'fever': {0: False, 1: True, 2: False},
     'fnc': {0: True, 1: True, 2: True, 3: True},
     'leaders': {0: True, 1: True, 2: True}
 }
@@ -186,163 +186,257 @@ class InputFeatures(object):
 
 
 
-def other_entries(val_ratio = .2):
+# def other_entries(val_ratio = .2):
+#     input_data = []
+#     input_data_val = []
+#
+#     # # FEVER
+#     # # Todo: fix this part of the fucking code
+#     # df = pd.read_hdf('../examples/temp/datasets/fever/shared_task_dev-new.h5')
+#     # entry_ = {}
+#     # entry_['title'] = 'fever'
+#     # entry_['paragraphs'] = []
+#     # some_texts = []
+#     # temp_labs = []
+#     # c = 0
+#     # for item in df.to_dict('records'):
+#     #     for ind in range(len(item['related_line_nums'])):
+#     #         if item['label'] != 2:
+#     #             qas = [{}]
+#     #             qas[0]['question'] = item['claim']
+#     #             qas[0]['id'] = 'fever_' + str(c)
+#     #             c += 1
+#     #             qas[0]['answers'] = [
+#     #                 {'text': item['related_sentences'][ind][item['related_line_nums'][ind]],
+#     #                  'answer_start': 0 if item['related_line_nums'][ind] == 0 else sum(
+#     #                      [len(item['related_sentences'][ind][i]) for i in range(item['related_line_nums'][ind])]
+#     #                  )}
+#     #             ]
+#     #             if item['label'] == 0:  # False, wose than impossible
+#     #                 qas[0]['is_impossible'] = 2
+#     #                 temp_labs.append(2)
+#     #             elif item['label'] == 1:  # True, not impossible
+#     #                 qas[0]['is_impossible'] = 0
+#     #                 temp_labs.append(0)
+#     #             else:
+#     #                 raise Exception('label error')
+#     #             pa = {'qas': qas, 'context': ''.join(item['related_sentences'][ind])}
+#     #             some_texts.append(''.join(item['related_sentences'][ind]))
+#     #             entry_['paragraphs'].append(pa)
+#     #         else:
+#     #             if len(some_texts):
+#     #                 qas = [{}]
+#     #                 qas[0]['question'] = item['claim']
+#     #                 qas[0]['id'] = 'fever_' + str(c)
+#     #                 c += 1
+#     #                 qas[0]['plausible_answers'] = [],
+#     #                 qas[0]['answers'] = [],
+#     #                 if item['label'] == 2:  # Impossible
+#     #                     qas[0]['is_impossible'] = 1
+#     #                     temp_labs.append(1)
+#     #                 else:
+#     #                     raise Exception('label error')
+#     #                 pa = {'qas': qas, 'context': np.random.choice(some_texts)}
+#     #                 entry_['paragraphs'].append(pa)
+#     #
+#     # inds = list(range(len(entry_['paragraphs'])))
+#     # trash, trash, trash, trash, train_idx, val_idx = train_test_split(
+#     #     inds, temp_labs, inds, test_size=val_ratio)
+#     #
+#     # entry_train = deepcopy(entry_)
+#     # entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
+#     # entry_val = deepcopy(entry_)
+#     # entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
+#     # input_data.append(deepcopy(entry_train))
+#     # input_data_val.append(entry_val)
+#     #
+#     # del entry_
+#     # del df
+#
+#     # leaders
+#     df = pd.read_pickle('../examples/temp/datasets/leaders/leaders.pickle')
+#
+#     entry_ = {}
+#     entry_['title'] = 'leaders'
+#     entry_['paragraphs'] = []
+#     temp_labs = []
+#
+#     c = 0
+#     for item in df.to_dict('records'):
+#         qas = [{}]
+#         qas[0]['question'] = item['claim']
+#         qas[0]['id'] = 'leaders_' + str(c)
+#         c += 1
+#         qas[0]['answers'] = []
+#         qas[0]['is_impossible'] = item['label']
+#         temp_labs.append(item['label'])
+#
+#         pa = {'qas': qas, 'context': ''.join(item['texts'])}
+#
+#         entry_['paragraphs'].append(pa)
+#
+#     inds = list(range(len(entry_['paragraphs'])))
+#     trash, trash, trash, trash, train_idx, val_idx = train_test_split(
+#         inds, temp_labs, inds, test_size=val_ratio)
+#
+#     entry_train = deepcopy(entry_)
+#     entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
+#     entry_val = deepcopy(entry_)
+#     entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
+#     input_data.append(deepcopy(entry_train))
+#     input_data_val.append(entry_val)
+#
+#     del df
+#
+#
+#     # fnc
+#
+#     ts = pd.read_csv('../examples/temp/datasets/fnc/train_stances.csv')
+#
+#     tb = pd.read_csv('../examples/temp/datasets/fnc/train_bodies.csv')
+#
+#     bodyid2text = {}
+#
+#     for i in tb.to_dict('records'):
+#         bodyid2text[i['Body ID']] = i['articleBody']
+#
+#     stance2lab = {'agree': 3, 'disagree': 0, 'discuss': 2, 'unrelated': 1}
+#
+#     entry_ = {}
+#     entry_['title'] = 'fnc'
+#     entry_['paragraphs'] = []
+#     temp_labs = []
+#
+#     c = 0
+#     for item in ts.to_dict('records'):
+#         qas = [{}]
+#         qas[0]['question'] = item['Headline']
+#         qas[0]['id'] = 'fnc_' + str(c)
+#         c += 1
+#         qas[0]['answers'] = []
+#         qas[0]['is_impossible'] = stance2lab[item['Stance']]
+#         temp_labs.append(stance2lab[item['Stance']])
+#
+#         pa = {'qas': qas, 'context': bodyid2text[item['Body ID']]}
+#
+#         entry_['paragraphs'].append(pa)
+#
+#     inds = list(range(len(entry_['paragraphs'])))
+#     trash, trash, trash, trash, train_idx, val_idx = train_test_split(
+#         inds, temp_labs, inds, test_size=val_ratio)
+#
+#     entry_train = deepcopy(entry_)
+#     entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
+#     entry_val = deepcopy(entry_)
+#     entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
+#     input_data.append(deepcopy(entry_train))
+#     input_data_val.append(entry_val)
+#
+#     del entry_
+#     del tb
+#     del ts
+#     del bodyid2text
+#
+#
+#     pickle.dump(input_data, open('temp/datasets/mixed/train_entries.pkl', 'wb'))
+#     pickle.dump(input_data_val, open('temp/datasets/mixed/val_entries.pkl', 'wb'))
+#
+#     #Todo: remove
+#     # return [], []
+#     return input_data, input_data_val
+
+
+def other_entries():
     input_data = []
     input_data_val = []
 
     # leaders
-    df = pd.read_pickle('../examples/temp/datasets/leaders/leaders.pickle')
-
+    train = json.load(open('../examples/temp/datasets/leaders/hao_train.json', 'r'))
+    val = json.load(open('../examples/temp/datasets/leaders/hao_dev.json', 'r'))
     entry_ = {}
     entry_['title'] = 'leaders'
     entry_['paragraphs'] = []
-    temp_labs = []
+
 
     c = 0
-    for item in df.to_dict('records'):
+    for item in train:
         qas = [{}]
         qas[0]['question'] = item['claim']
         qas[0]['id'] = 'leaders_' + str(c)
         c += 1
         qas[0]['answers'] = []
         qas[0]['is_impossible'] = item['label']
-        temp_labs.append(item['label'])
 
-        pa = {'qas': qas, 'context': ''.join(item['texts'])}
+        pa = {'qas': qas, 'context': item['context']}
 
         entry_['paragraphs'].append(pa)
 
-    inds = list(range(len(entry_['paragraphs'])))
-    trash, trash, trash, trash, train_idx, val_idx = train_test_split(
-        inds, temp_labs, inds, test_size=val_ratio)
 
-    entry_train = deepcopy(entry_)
-    entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
-    entry_val = deepcopy(entry_)
-    entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
-    input_data.append(deepcopy(entry_train))
-    input_data_val.append(entry_val)
+    input_data.append(deepcopy(entry_))
 
-    del df
-
-    # FEVER
-    df = pd.read_hdf('../examples/temp/datasets/fever/shared_task_dev-new.h5')
     entry_ = {}
-    entry_['title'] = 'fever'
+    entry_['title'] = 'leaders'
     entry_['paragraphs'] = []
-    some_texts = []
-    temp_labs = []
+
     c = 0
-    for item in df.to_dict('records'):
-        for ind in range(len(item['related_line_nums'])):
-            if item['label'] != 2:
-                qas = [{}]
-                qas[0]['question'] = item['claim']
-                qas[0]['id'] = 'fever_' + str(c)
-                c += 1
-                qas[0]['answers'] = [
-                    {'text': item['related_sentences'][ind][item['related_line_nums'][ind]],
-                     'answer_start': 0 if item['related_line_nums'][ind] == 0 else sum(
-                         [len(item['related_sentences'][ind][i]) for i in range(item['related_line_nums'][ind])]
-                     )}
-                ]
-                if item['label'] == 0:  # False, wose than impossible
-                    qas[0]['is_impossible'] = 2
-                    temp_labs.append(2)
-                elif item['label'] == 1:  # True, not impossible
-                    qas[0]['is_impossible'] = 0
-                    temp_labs.append(0)
-                else:
-                    raise Exception('label error')
-                pa = {'qas': qas, 'context': ''.join(item['related_sentences'][ind])}
-                some_texts.append(''.join(item['related_sentences'][ind]))
-                entry_['paragraphs'].append(pa)
-            else:
-                if len(some_texts):
-                    qas = [{}]
-                    qas[0]['question'] = item['claim']
-                    qas[0]['id'] = 'fever_' + str(c)
-                    c += 1
-                    qas[0]['plausible_answers'] = [],
-                    qas[0]['answers'] = [],
-                    if item['label'] == 2:  # Impossible
-                        qas[0]['is_impossible'] = 1
-                        temp_labs.append(1)
-                    else:
-                        raise Exception('label error')
-                    pa = {'qas': qas, 'context': np.random.choice(some_texts)}
-                    entry_['paragraphs'].append(pa)
+    for item in val:
+        qas = [{}]
+        qas[0]['question'] = item['claim']
+        qas[0]['id'] = 'leaders_' + str(c)
+        c += 1
+        qas[0]['answers'] = []
+        qas[0]['is_impossible'] = item['label']
 
-    inds = list(range(len(entry_['paragraphs'])))
-    trash, trash, trash, trash, train_idx, val_idx = train_test_split(
-        inds, temp_labs, inds, test_size=val_ratio)
+        pa = {'qas': qas, 'context': item['context']}
 
-    entry_train = deepcopy(entry_)
-    entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
-    entry_val = deepcopy(entry_)
-    entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
-    input_data.append(deepcopy(entry_train))
-    input_data_val.append(entry_val)
+        entry_['paragraphs'].append(pa)
 
-    del entry_
-    del df
+    input_data_val.append(deepcopy(entry_))
+
 
     # fnc
-
-    ts = pd.read_csv('../examples/temp/datasets/fnc/train_stances.csv')
-
-    tb = pd.read_csv('../examples/temp/datasets/fnc/train_bodies.csv')
-
-    bodyid2text = {}
-
-    for i in tb.to_dict('records'):
-        bodyid2text[i['Body ID']] = i['articleBody']
-
-    stance2lab = {'agree': 3, 'disagree': 0, 'discuss': 2, 'unrelated': 1}
-
+    train = json.load(open('../examples/temp/datasets/fnc/train.json', 'r'))
+    val = json.load(open('../examples/temp/datasets/fnc/dev.json', 'r'))
     entry_ = {}
     entry_['title'] = 'fnc'
     entry_['paragraphs'] = []
-    temp_labs = []
 
     c = 0
-    for item in ts.to_dict('records'):
+    for item in train:
         qas = [{}]
-        qas[0]['question'] = item['Headline']
+        qas[0]['question'] = item['claim']
         qas[0]['id'] = 'fnc_' + str(c)
         c += 1
         qas[0]['answers'] = []
-        qas[0]['is_impossible'] = stance2lab[item['Stance']]
-        temp_labs.append(stance2lab[item['Stance']])
+        qas[0]['is_impossible'] = item['label']
 
-        pa = {'qas': qas, 'context': bodyid2text[item['Body ID']]}
+        pa = {'qas': qas, 'context': '. '.join(item['context'])}
 
         entry_['paragraphs'].append(pa)
 
-    inds = list(range(len(entry_['paragraphs'])))
-    trash, trash, trash, trash, train_idx, val_idx = train_test_split(
-        inds, temp_labs, inds, test_size=val_ratio)
+    input_data.append(deepcopy(entry_))
 
-    entry_train = deepcopy(entry_)
-    entry_train['paragraphs'] = [entry_train['paragraphs'][i] for i in train_idx]
-    entry_val = deepcopy(entry_)
-    entry_val['paragraphs'] = [entry_val['paragraphs'][i] for i in val_idx]
-    input_data.append(deepcopy(entry_train))
-    input_data_val.append(entry_val)
+    entry_ = {}
+    entry_['title'] = 'leaders'
+    entry_['paragraphs'] = []
 
-    del entry_
-    del tb
-    del ts
-    del bodyid2text
+    c = 0
+    for item in val:
+        qas = [{}]
+        qas[0]['question'] = item['claim']
+        qas[0]['id'] = 'fnc_' + str(c)
+        c += 1
+        qas[0]['answers'] = []
+        qas[0]['is_impossible'] = item['label']
+
+        pa = {'qas': qas, 'context': '. '.join(item['context'])}
+
+        entry_['paragraphs'].append(pa)
+
+    input_data_val.append(deepcopy(entry_))
 
 
-    pickle.dump(input_data, open('temp/datasets/mixed/train_entries.pkl', 'wb'))
-    pickle.dump(input_data_val, open('temp/datasets/mixed/val_entries.pkl', 'wb'))
-
-    #Todo: remove
-    # return [], []
     return input_data, input_data_val
-
 
 def read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs):
     nested_paragraphs = list(chunks(paragraphs, 100))  # Todo: split into nested
@@ -351,7 +445,7 @@ def read_squad_examples_helper_parallel(is_training, version_2_with_negative, da
     zip_args = list(zip([is_training] * len_nested, [version_2_with_negative] * len_nested,
               [dataset_name] * len_nested, nested_paragraphs))
 
-    results = Parallel(n_jobs=8)(delayed(read_squad_examples_helper)(
+    results = Parallel(n_jobs=30)(delayed(read_squad_examples_helper)(
         is_training_,
         version_2_with_negative_,
         dataset_name_,
@@ -551,7 +645,31 @@ def read_squad_examples_helper(is_training, version_2_with_negative, dataset_nam
 
     return examples
 
+def read_arbitrary_examples(input_data, is_training, version_2_with_negative):
 
+    examples = []
+
+    for entry in input_data:
+        if entry['title'] not in ['fever', 'fnc', 'leaders']:
+            dataset_name = 'squad'
+        else:
+            dataset_name = entry['title']
+
+        # Todo: try parallelize
+
+        paragraphs = entry["paragraphs"]
+
+        # Todo: try parallelize
+        if dataset_name == 'squad':
+            logger.info('Read {} examples'.format(dataset_name))
+            results = read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, False)
+            examples += list(flatten(results))
+        else:
+            logger.info('Prallel read {} examples'.format(dataset_name))
+            results = read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs)
+            examples += list(flatten(results))
+
+    return examples
 
 
 def read_squad_examples(input_file, is_training, version_2_with_negative):
@@ -570,6 +688,12 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
 
     # Todo: hack other data in
     other_entries_train, other_entries_val = other_entries()
+
+    # Todo: remove
+    # if is_training:
+    #     input_data = other_entries_train + [] # input_data
+    # else:
+    #     input_data = other_entries_val + [] # input_data
 
     if is_training:
         input_data = other_entries_train + input_data
@@ -594,6 +718,7 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
             results = read_squad_examples_helper(is_training, version_2_with_negative, dataset_name, paragraphs, False)
             examples += list(flatten(results))
         else:
+            # continue # Todo: remove
             logger.info('Prallel read {} examples'.format(dataset_name))
             results = read_squad_examples_helper_parallel(is_training, version_2_with_negative, dataset_name, paragraphs)
             examples += list(flatten(results))
@@ -623,7 +748,7 @@ def convert_examples_to_features_parallel(examples, tokenizer, max_seq_length,
             [cls_token_segment_id] * len_nested, [pad_token_segment_id] * len_nested,
             [mask_padding_with_zero] * len_nested, [True] * len_nested, [1000000000 * (i + 1) for i in range(len_nested)]))
 
-    results = Parallel(n_jobs=8)(delayed(convert_examples_to_features)(
+    results = Parallel(n_jobs=30)(delayed(convert_examples_to_features)(
         examples_, tokenizer_, max_seq_length_,
         doc_stride_, max_query_length_, is_training_,
         cls_token_at_end_, cls_token_, sep_token_, pad_token_,
