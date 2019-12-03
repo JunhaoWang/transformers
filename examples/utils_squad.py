@@ -73,10 +73,10 @@ DATASET2HEAD = {
 }
 
 DATASET2HEADSIZE = {
-    'squad': 0,
+    'squad': 2,
     # 'fever': 3,
-    'fnc': 1,
-    'leaders': 2
+    'fnc': 4,
+    'leaders': 3
 }
 
 DATASET2SPANLOSS = {
